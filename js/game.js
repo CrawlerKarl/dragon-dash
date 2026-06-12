@@ -8,6 +8,9 @@ const ctx = canvas.getContext('2d');
 // all game code keeps drawing in logical VW×VH coordinates.
 let VW = 480, VH = 270;
 const RS = 2;
+// world rendering is zoomed in so the action fills the screen;
+// WVW/WVH are the world-space viewport dimensions (VW/ZOOM etc.)
+let ZOOM = 1.35, WVW = VW / 1.35, WVH = VH / 1.35;
 
 // touch button layout — KI sits well above JUMP so a thumb on one never
 // hides the other; transform lives on the stick side.
@@ -28,6 +31,8 @@ function fitCanvas() {
   const nw = portrait ? 270 : 480, nh = portrait ? 480 : 270;
   if (nw !== VW || nh !== VH || canvas.width !== VW * RS) {
     VW = nw; VH = nh;
+    ZOOM = portrait ? 1.55 : 1.35;
+    WVW = VW / ZOOM; WVH = VH / ZOOM;
     canvas.width = VW * RS; canvas.height = VH * RS;
     layoutButtons();
   }
@@ -413,13 +418,14 @@ function homingSteer(dt) {
 function updateCamera(dt) {
   const p = G.player;
   if (G.level.mode === 'fly') return; // handled in updateFlyZone
-  let tx = p.x - VW / 2 + 40 + p.vx * 0.22;
-  let ty = p.y - VH / 2 - 24;
+  let tx = p.x - WVW / 2 + 30 + p.vx * 0.2;
+  let ty = p.y - WVH * 0.58; // player rides low in frame -> less empty sky
   if (G.state === 'boss' && G.bossArena) {
-    tx = Math.max(G.bossArena.l, Math.min(G.bossArena.r - VW, (G.bossArena.l + G.bossArena.r) / 2 - VW / 2));
+    tx = Math.max(G.bossArena.l, Math.min(G.bossArena.r - WVW, (G.bossArena.l + G.bossArena.r) / 2 - WVW / 2));
+    if (G.bossArena.r - G.bossArena.l < WVW) tx = G.bossArena.l - (WVW - (G.bossArena.r - G.bossArena.l)) / 2;
   }
-  tx = Math.max(0, Math.min(G.level.W * TILE - VW, tx));
-  const maxY = G.level.H * TILE - VH;
+  tx = Math.max(0, Math.min(G.level.W * TILE - WVW, tx));
+  const maxY = G.level.H * TILE - WVH;
   // level shorter than the view (portrait): anchor its floor to the screen bottom
   ty = maxY <= 0 ? maxY : Math.max(0, Math.min(maxY, ty));
   G.camX += (tx - G.camX) * Math.min(1, 8 * dt);
@@ -439,8 +445,8 @@ function updateFlyZone(dt) {
   // spawn waves (wave y values are authored for a 270px field — scale to viewport)
   while (G.waveIdx < lvl.waves.length && lvl.waves[G.waveIdx].t <= G.flyT) {
     const w = lvl.waves[G.waveIdx++];
-    const sx = G.camX + VW + 30;
-    const wy = Math.round(w.y * VH / 270);
+    const sx = G.camX + WVW + 30;
+    const wy = Math.round(w.y * WVH / 270);
     if (w.type === 'asteroid') G.enemies.push(makeEnemy('asteroid', sx, wy));
     else if (w.type === 'soldier') { const e = makeEnemy('soldier', sx, wy); e.homeY = wy; G.enemies.push(e); }
     else if (w.type === 'zline') { for (let i = 0; i < w.n; i++) G.pickups.push({ type: 'zeni', x: sx + i * 22, y: wy, life: Infinity }); }
@@ -455,14 +461,14 @@ function updateFlyZone(dt) {
     G.state = 'boss';
     AudioSys.playMusic('boss');
     startDialogue(DIALOGUES.pre_ginyu, () => {
-      G.boss = makeBoss('ginyu', G.camX, G.camX + VW, 200);
-      G.boss.x = G.camX + VW + 40;
-      G.boss.y = VH * 0.48;
+      G.boss = makeBoss('ginyu', G.camX, G.camX + WVW, 200);
+      G.boss.x = G.camX + WVW + 40;
+      G.boss.y = WVH * 0.48;
     });
   }
   if (G.boss && !G.boss.dead) {
     // keep arena moving with camera
-    G.boss.arenaL = G.camX; G.boss.arenaR = G.camX + VW;
+    G.boss.arenaL = G.camX; G.boss.arenaR = G.camX + WVW;
   }
 }
 
@@ -553,7 +559,7 @@ function updateEnding(dt) {
   }
 }
 function drawEnding() {
-  drawBackground(ctx, 'namek', 0, 0, G.time);
+  drawBackground(ctx, 'namek', 0, 0, G.time, VW, VH);
   const allBalls = G.save.balls.length >= 7;
   // ground strip
   ctx.fillStyle = THEMES.namek.fill; ctx.fillRect(0, VH - 40, VW, 40);
@@ -640,9 +646,9 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
-const GAME_VERSION = 'v5';
+const GAME_VERSION = 'v6';
 function drawTitle() {
-  drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT);
+  drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT, VW, VH);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
   const ly = Math.round(VH * 0.18);
   // shenron silhouette winding across the sky
@@ -707,7 +713,7 @@ function updateChapters(dt) {
   }
 }
 function drawChapters() {
-  drawBackground(ctx, 'space', G.titleT * 10, 0, G.titleT);
+  drawBackground(ctx, 'space', G.titleT * 10, 0, G.titleT, VW, VH);
   drawTextC('CHAPTER SELECT', VW / 2, Math.round(VH * 0.16), 20, '#ffd824');
   const names = ['1. WEST CITY', '2. ROCKY WASTELAND', '3. DEEP SPACE', '4. PLANET NAMEK'];
   const n = Math.min(G.save.maxZone, 3) + 1;
@@ -817,6 +823,7 @@ function drawWorld() {
   const camX = Math.round(G.camX), camY = Math.round(G.camY);
   const isFly = G.level.mode === 'fly';
   ctx.save();
+  ctx.scale(ZOOM, ZOOM);
   if (G.shake > 0) ctx.translate((Math.random() - 0.5) * G.shake * 9, (Math.random() - 0.5) * G.shake * 9);
 
   drawBackground(ctx, G.level.theme, camX, camY, G.time);
@@ -851,7 +858,7 @@ function drawWorld() {
   for (const pk of G.pickups) {
     if (pk.dead) continue;
     const x = pk.x - camX, y = pk.y - camY;
-    if (x < -20 || x > VW + 20) continue;
+    if (x < -20 || x > WVW + 20) continue;
     if (pk.type === 'zeni') {
       const ph = Math.floor(G.time * 8 + pk.x * 0.1) % 4;
       const w = [6, 4, 2, 4][ph];
@@ -877,7 +884,7 @@ function drawWorld() {
   for (const e of G.enemies) {
     if (e.dead) continue;
     const x = e.x - camX, y = e.y - camY;
-    if (x < -40 || x > VW + 40) continue;
+    if (x < -40 || x > WVW + 40) continue;
     if (e.hurtT > 0 && Math.floor(e.hurtT * 30) % 2 === 0) continue;
     const f2 = Math.floor((G.time + e.t) * 6) % 2 === 0;
     const flip = G.player.x < e.x;
@@ -1039,8 +1046,12 @@ function drawPlayer(camX, camY) {
       ctx.save();
       ctx.translate(ax, ay);
       ctx.rotate(a);
-      ctx.fillStyle = 'rgba(82,216,240,0.9)';
-      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, -6); ctx.lineTo(-5, 6); ctx.fill();
+      ctx.fillStyle = 'rgba(82,216,240,0.95)';
+      ctx.strokeStyle = 'rgba(10,30,60,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-4, -4.5); ctx.lineTo(-1.5, 0); ctx.lineTo(-4, 4.5); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 1;
       ctx.restore();
     }
   }
@@ -1051,7 +1062,7 @@ function drawKameBeam(camX, camY) {
   const dir = G.kame.dir;
   const y = (p.flyMode ? p.fy : p.y - 11) - camY;
   const x0 = p.x - camX + dir * 13;
-  const len = dir > 0 ? VW - x0 + 20 : x0 + 20;
+  const len = dir > 0 ? WVW - x0 + 20 : x0 + 20;
   const wob = Math.sin(G.time * 30) * 2;
   const w = 16 + wob + Math.min(8, G.kame.t * 14);
   const sx = dir > 0 ? x0 : x0 - len;

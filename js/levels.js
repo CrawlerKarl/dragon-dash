@@ -501,9 +501,9 @@ function tileSet(theme) {
 function drawTiles(ctx, level, camX, camY, time) {
   const set = tileSet(level.theme);
   const x0 = Math.max(0, Math.floor(camX / TILE));
-  const x1 = Math.min(level.W - 1, Math.ceil((camX + VW) / TILE));
+  const x1 = Math.min(level.W - 1, Math.ceil((camX + WVW) / TILE));
   const y0 = Math.max(0, Math.floor(camY / TILE));
-  const y1 = Math.min(level.H - 1, Math.ceil((camY + VH) / TILE));
+  const y1 = Math.min(level.H - 1, Math.ceil((camY + WVH) / TILE));
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const t = level.grid[ty][tx];
@@ -535,18 +535,18 @@ function drawTiles(ctx, level, camX, camY, time) {
   }
 }
 
-function skyGradient(ctx, th) {
-  const g = ctx.createLinearGradient(0, 0, 0, VH);
+function skyGradient(ctx, th, W, H) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, th.skyTop); g.addColorStop(1, th.skyBot);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, VW, VH);
+  ctx.fillRect(0, 0, W, H);
 }
 
 // All painters anchor to VW/VH so the game works in landscape AND portrait.
-function drawBackground(ctx, theme, camX, camY, time) {
+function drawBackground(ctx, theme, camX, camY, time, W, H) {
   const th = THEMES[theme];
-  skyGradient(ctx, th);
-  const W = VW, H = VH;
+  W = W || WVW; H = H || WVH;
+  skyGradient(ctx, th, W, H);
   const horizon = H * 0.78; // skyline base
   if (theme === 'city') {
     // sun + clouds
@@ -565,7 +565,7 @@ function drawBackground(ctx, theme, camX, camY, time) {
     ctx.fillStyle = fg;
     for (let i = 0; i < 14; i++) {
       const bx = ((i * 90 - camX * 0.25) % 1260 + 1260) % 1260 - 90;
-      const h = 60 + (hashXY(i, 7) % 50);
+      const h = H * 0.22 + (hashXY(i, 7) % Math.round(H * 0.3));
       ctx.fillRect(bx, horizon - h, 56, h + H - horizon);
       if (i % 3 === 0) {
         ctx.beginPath(); ctx.arc(bx + 28, horizon - h, 28, Math.PI, 0); ctx.fill(); // capsule dome
@@ -589,7 +589,7 @@ function drawBackground(ctx, theme, camX, camY, time) {
     ctx.fillStyle = ng;
     for (let i = 0; i < 12; i++) {
       const bx = ((i * 120 - camX * 0.5) % 1440 + 1440) % 1440 - 120;
-      const h = 40 + (hashXY(i, 3) % 60);
+      const h = H * 0.16 + (hashXY(i, 3) % Math.round(H * 0.26));
       const base = H * 0.89;
       ctx.fillRect(bx, base - h, 70, h + H - base);
       ctx.fillStyle = 'rgba(255,233,168,0.9)';
@@ -602,14 +602,14 @@ function drawBackground(ctx, theme, camX, camY, time) {
     for (let i = 0; i < 8; i++) {
       const mx = ((i * 180 - camX * 0.2) % 1440 + 1440) % 1440 - 120;
       ctx.beginPath();
-      ctx.moveTo(mx, horizon + 10); ctx.lineTo(mx + 30, horizon - 110 + (hashXY(i, 2) % 30)); ctx.lineTo(mx + 90, horizon - 115 + (hashXY(i, 5) % 30)); ctx.lineTo(mx + 120, horizon + 10);
+      ctx.moveTo(mx, horizon + 10); ctx.lineTo(mx + 30, horizon - H * 0.42 + (hashXY(i, 2) % 30)); ctx.lineTo(mx + 90, horizon - H * 0.44 + (hashXY(i, 5) % 30)); ctx.lineTo(mx + 120, horizon + 10);
       ctx.fill();
       ctx.fillRect(mx, horizon - 10, 130, H - horizon + 10);
     }
     ctx.fillStyle = '#c07838';
     for (let i = 0; i < 7; i++) {
       const mx = ((i * 230 - camX * 0.45) % 1610 + 1610) % 1610 - 160;
-      const top = horizon - 60 + (hashXY(i, 9) % 20);
+      const top = horizon - H * 0.24 + (hashXY(i, 9) % 20);
       ctx.fillRect(mx, top, 60, H - top);
       ctx.fillRect(mx + 15, top - 15, 30, 20);
     }
