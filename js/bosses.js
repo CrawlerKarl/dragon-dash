@@ -364,14 +364,11 @@ function drawBoss(ctx, camX, camY) {
   const x = b.x - camX, y = b.y - camY;
   if (b.kind !== 'ginyu' && !b.dead) softShadow(x, b.groundY - camY, 15);
   if (b.hurtT > 0 && Math.floor(b.hurtT * 30) % 2 === 0) return; // hit flicker
-  let img = null;
-  const f2 = Math.floor(b.t * 4) % 2 === 0;
-  switch (b.kind) {
-    case 'mech': img = Sprites.mech; break;
-    case 'vegeta': img = (b.state === 'volley' || b.state === 'galick' || b.state === 'galickTele') ? Sprites.vegeta2 : Sprites.vegeta1; break;
-    case 'ginyu': img = f2 ? Sprites.ginyu1 : Sprites.ginyu2; break;
-    case 'frieza': img = f2 ? Sprites.frieza1 : Sprites.frieza2; break;
-  }
+  let bossPose = 'idle';
+  if (b.state === 'volley' || b.state === 'beams' || b.state === 'spread' || b.state === 'shoot') bossPose = 'blast';
+  else if (b.state === 'galick' || b.state === 'galickTele' || b.state === 'deathballTele') bossPose = 'kame';
+  else if (b.state === 'dash' || b.state === 'charge') bossPose = 'punch';
+  else if (b.kind === 'ginyu') bossPose = 'jump';
   // telegraph glow
   if (b.telegraphT > 0 && (b.state.includes('Tele') || b.state === 'stomp' || b.state === 'shoot')) {
     b.telegraphT -= 1 / 60;
@@ -383,7 +380,9 @@ function drawBoss(ctx, camX, camY) {
     ctx.fillStyle = 'rgba(160,90,216,0.25)';
     ctx.beginPath(); ctx.ellipse(x, y - 17, 23 + Math.sin(b.t * 10) * 4, 28, 0, 0, 7); ctx.fill();
   }
-  if (img) drawSprite(ctx, img, x, y, b.flipped, 1.8);
+  const VBOSS = { vegeta: 'vegeta', ginyu: 'ginyu', frieza: 'frieza' };
+  if (b.kind === 'mech') drawVMech(ctx, x, y, { flip: b.flipped, anim: b.t, scale: 1.35 });
+  else drawVChar(ctx, x, y, { style: VBOSS[b.kind], pose: bossPose, anim: b.t, flip: b.flipped, scale: 1.18 });
   // galick gun / vegeta beam
   if (b.kind === 'vegeta' && b.state === 'galick') {
     const dir = b.galickDir;

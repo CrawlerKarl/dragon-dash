@@ -565,7 +565,7 @@ function drawEnding() {
   ctx.fillStyle = THEMES.namek.fill; ctx.fillRect(0, VH - 40, VW, 40);
   ctx.fillStyle = THEMES.namek.top; ctx.fillRect(0, VH - 40, VW, 5);
   // goku
-  drawSprite(ctx, allBalls && G.endPhase >= 1 ? Sprites.ss_idle : Sprites.idle, VW * 0.23, VH - 40, false, 1.6);
+  drawVChar(ctx, VW * 0.23, VH - 40, { style: 'goku', pose: 'idle', anim: G.time, ss: allBalls && G.endPhase >= 1, scale: 1.15 });
   if (allBalls) {
     // shenron rises
     const rise = Math.min(1, G.endT / 2.5);
@@ -589,7 +589,7 @@ function drawEnding() {
     // 7 balls circling at base
     for (let i = 0; i < 7; i++) {
       const a = G.time * 1.5 + i / 7 * Math.PI * 2;
-      drawSprite(ctx, Sprites.dragonball, hx + Math.cos(a) * 40, VH - 8 + Math.sin(a) * 8, false, 1);
+      drawVBall(ctx, hx + Math.cos(a) * 40, VH - 10 + Math.sin(a) * 8, 0.95, G.time + i);
     }
   }
   if (G.endPhase === 2) {
@@ -646,7 +646,7 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
-const GAME_VERSION = 'v6';
+const GAME_VERSION = 'v7';
 function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT, VW, VH);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
@@ -668,7 +668,7 @@ function drawTitle() {
   ctx.fillStyle = `rgba(255,180,40,${glow})`;
   ctx.beginPath(); ctx.arc(VW / 2, ly + 22, 64, 0, 7); ctx.fill();
   ctx.globalAlpha = 0.95;
-  drawSprite(ctx, Sprites.dragonball, VW / 2, ly + 70, false, 14);
+  drawVBall(ctx, VW / 2, ly + 22, 8.5, G.time);
   ctx.globalAlpha = 1;
   // logo
   drawTextC('DRAGON', VW / 2, ly, 40, '#ff8c1a', '#16161f');
@@ -676,12 +676,11 @@ function drawTitle() {
   drawTextC('~ a Dragon Ball Z adventure ~', VW / 2, ly + 66, 10, '#9ad1ff');
   // goku running along the bottom
   const gx = ((G.titleT * 120) % (VW + 120)) - 60;
-  const frame = ['run1', 'run2', 'run3', 'run2'][Math.floor(G.titleT * 10) % 4];
   ctx.fillStyle = '#2c2c3a'; ctx.fillRect(0, VH - 20, VW, 20);
-  drawSprite(ctx, Sprites[(G.save.beaten ? 'ss_' : '') + frame], gx, VH - 20, false, 1.5);
+  drawVChar(ctx, gx, VH - 20, { pose: 'run', anim: G.titleT * 2.2, ss: G.save.beaten, style: 'goku', scale: 1.1 });
   for (let i = 0; i < 7; i++) {
     const a = G.titleT * 0.8 + i / 7 * Math.PI * 2;
-    drawSprite(ctx, Sprites.dragonball, VW / 2 + Math.cos(a) * VW * 0.31, ly + 32 + Math.sin(a) * 34, false, 1);
+    drawVBall(ctx, VW / 2 + Math.cos(a) * VW * 0.31, ly + 32 + Math.sin(a) * 34, 0.9, G.time + i);
   }
   // menu buttons
   const items = titleMenuItems();
@@ -690,7 +689,7 @@ function drawTitle() {
   if (G.save.balls.length > 0) {
     for (let i = 0; i < 7; i++) {
       ctx.globalAlpha = G.save.balls.includes(i + 1) ? 1 : 0.25;
-      drawSprite(ctx, Sprites.dragonball, VW / 2 - 40 + i * 12, ly + 86, false, 1);
+      drawVBall(ctx, VW / 2 - 40 + i * 12, ly + 82, 0.8, G.time);
     }
     ctx.globalAlpha = 1;
   }
@@ -848,7 +847,7 @@ function drawWorld() {
   }
   // npcs
   for (const n of G.npcs || []) {
-    drawSprite(ctx, Sprites.bulma, n.x - camX, n.y - camY, G.player.x < n.x, 1.8);
+    drawVChar(ctx, n.x - camX, n.y - camY, { style: 'bulma', pose: 'idle', anim: G.time, flip: G.player.x < n.x, scale: 0.98 });
     if (!G.save.radar) {
       const bob = Math.sin(G.time * 4) * 2;
       drawTextC('!', n.x - camX, n.y - camY - 34 + bob, 12, '#ffd824', '#16161f');
@@ -860,24 +859,13 @@ function drawWorld() {
     const x = pk.x - camX, y = pk.y - camY;
     if (x < -20 || x > WVW + 20) continue;
     if (pk.type === 'zeni') {
-      const ph = Math.floor(G.time * 8 + pk.x * 0.1) % 4;
-      const w = [6, 4, 2, 4][ph];
-      // soft gold glow
-      ctx.fillStyle = 'rgba(255,216,36,0.18)';
-      ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(w / 6 * 2, 2);
-      ctx.drawImage(Sprites.zeni, -3, -3);
-      ctx.restore();
+      drawVCoin(ctx, x, y, G.time * 4 + pk.x * 0.06, 1.45);
     } else if (pk.type === 'dragonball') {
       const bob = Math.sin(G.time * 3 + pk.id) * 3;
-      ctx.fillStyle = `rgba(255,216,36,${0.25 + Math.sin(G.time * 5) * 0.1})`;
-      ctx.beginPath(); ctx.arc(x, y + bob - 4, 14, 0, 7); ctx.fill();
-      drawSprite(ctx, Sprites.dragonball, x, y + bob + 4, false, 2);
+      drawVBall(ctx, x, y + bob - 3, 1.5, G.time);
     } else if (pk.type === 'senzu') {
       const bob = Math.sin(G.time * 3) * 2;
-      drawSprite(ctx, Sprites.senzu, x, y + bob, false, 2.4);
+      drawVSenzu(ctx, x, y + bob - 2, 1.5);
     }
   }
   // enemies
@@ -890,17 +878,11 @@ function drawWorld() {
     const flip = G.player.x < e.x;
     if (G.level.mode !== 'fly' && e.kind !== 'asteroid') softShadow(x, y, e.w * 0.55);
     switch (e.kind) {
-      case 'rrbot': drawSprite(ctx, f2 ? Sprites.rrbot1 : Sprites.rrbot2, x, y, e.dir > 0, 1.6); break;
-      case 'drone': {
-        const img = f2 ? Sprites.drone1 : Sprites.drone2;
-        ctx.save();
-        if (e.frieza) ctx.filter = 'hue-rotate(90deg)';
-        drawSprite(ctx, img, x, y, flip, 1.6);
-        ctx.restore();
-        break;
-      }
-      case 'saiba': drawSprite(ctx, e.vy !== 0 ? Sprites.saiba2 : (f2 ? Sprites.saiba1 : Sprites.saiba2), x, y, flip, 1.6); break;
-      case 'soldier': case 'soldier_g': drawSprite(ctx, f2 ? Sprites.soldier1 : Sprites.soldier2, x, y, e.kind === 'soldier' ? false : flip, 1.6); break;
+      case 'rrbot': drawVRobot(ctx, x, y, { flip: e.dir > 0, anim: G.time + e.t, scale: 1.5 }); break;
+      case 'drone': drawVDrone(ctx, x, y, { anim: G.time + e.t, frieza: e.frieza, scale: 1.55 }); break;
+      case 'saiba': drawVSaiba(ctx, x, y, { flip, anim: G.time + e.t, air: e.vy !== 0, scale: 1.35 }); break;
+      case 'soldier': drawVChar(ctx, x + 4, y, { style: 'soldier', pose: 'fly', anim: G.time + e.t, scale: 0.92, rotate: 1.9 }); break;
+      case 'soldier_g': drawVChar(ctx, x, y, { style: 'soldier', pose: 'jump', anim: G.time + e.t, flip, scale: 0.92 }); break;
       case 'asteroid': {
         ctx.save();
         ctx.translate(x, y - 10);
@@ -971,13 +953,12 @@ function drawPlayer(camX, camY) {
   const p = G.player;
   // afterimage trail (very DBZ)
   for (const tr of G.trail) {
-    ctx.globalAlpha = (tr.t / 0.22) * 0.28;
-    drawSprite(ctx, Sprites[(tr.ss ? 'ss_' : '') + 'run2'], tr.x - camX, tr.y - camY, tr.flip, 1.8);
+    ctx.globalAlpha = (tr.t / 0.22) * 0.26;
+    drawVChar(ctx, tr.x - camX, tr.y - camY, { pose: 'run', anim: 0.5, flip: tr.flip, ss: tr.ss, style: 'goku', scale: 1.05 });
   }
   ctx.globalAlpha = 1;
   if (p.invulnT > 0 && p.deadT <= 0 && Math.floor(p.invulnT * 24) % 2 === 0) return;
-  const ss = p.ss ? 'ss_' : '';
-  let img;
+  let pose;
   const px = p.x - camX;
   const py = (p.flyMode ? p.fy + 7 : p.y) - camY;
 
@@ -994,22 +975,20 @@ function drawPlayer(camX, camY) {
     ctx.fill();
   }
   if (p.flyMode) {
-    img = Sprites[ss + (Math.floor(p.anim * 2) % 2 ? 'fly1' : 'fly2')];
-    if (p.kameT > 0) img = Sprites[ss + 'fly1'];
-    drawSprite(ctx, img, px, py, false, 1.6);
+    pose = 'fly';
+    drawVChar(ctx, px + 6, py + 2, { pose, anim: G.time, ss: p.ss, style: 'goku', scale: 1.05, rotate: 1.28 + Math.sin(G.time * 3) * 0.04 });
     // engine trail
     if (Math.random() < 0.6) G.particles.push({ x: p.x - 16, y: p.fy + 4, vx: -80, vy: (Math.random() - 0.5) * 20, life: 0.3, maxLife: 0.3, color: p.ss ? '#ffe23a' : '#9ad1ff', size: 2 });
   } else {
-    if (p.deadT > 0) img = Sprites[ss + 'hurt'];
-    else if (p.kameT > 0) img = Sprites[ss + 'kame'];
-    else if (p.charging) img = Sprites[ss + 'charge'];
-    else if (p.hurtT > 0) img = Sprites[ss + 'hurt'];
-    else if (p.attackKind === 'punch') img = Sprites[ss + 'punch'];
-    else if (p.attackKind === 'blast') img = Sprites[ss + 'blast'];
-    else if (!p.onGround) img = Sprites[ss + 'jump'];
-    else if (Math.abs(p.vx) > 15) img = Sprites[ss + ['run1', 'run2', 'run3', 'run2'][Math.floor(p.anim * 9) % 4]];
-    else img = Sprites[ss + 'idle'];
-    drawSprite(ctx, img, px, py, p.facing < 0, 1.8);
+    if (p.deadT > 0 || p.hurtT > 0) pose = 'hurt';
+    else if (p.kameT > 0) pose = 'kame';
+    else if (p.charging) pose = 'charge';
+    else if (p.attackKind === 'punch') pose = 'punch';
+    else if (p.attackKind === 'blast') pose = 'blast';
+    else if (!p.onGround) pose = 'jump';
+    else if (Math.abs(p.vx) > 15) pose = 'run';
+    else pose = 'idle';
+    drawVChar(ctx, px, py, { pose, anim: p.anim, flip: p.facing < 0, ss: p.ss, style: 'goku', scale: 1.05 });
     // speed lines when boosting
     if (Math.abs(p.vx) > 260) {
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
@@ -1092,7 +1071,7 @@ function drawHUD() {
   const p = G.player;
   // status panel: zeni + ki
   panel(28, 5, 96, 32, ['rgba(20,24,44,0.78)', 'rgba(10,12,26,0.78)'], 'rgba(255,255,255,0.25)');
-  ctx.drawImage(Sprites.zeni, 36, 10);
+  drawVCoin(ctx, 41, 16, 0.3, 1.15);
   const zeniCol = G.zeni === 0 && Math.floor(G.time * 4) % 2 ? '#ff5050' : '#ffd824';
   drawTextL('' + G.zeni, 47, 14, 11, zeniCol);
   drawTextL('KI', 36, 28, 8, '#9ad1ff');
@@ -1112,8 +1091,8 @@ function drawHUD() {
   // dragon balls
   for (let i = 0; i < 7; i++) {
     const has = G.save.balls.includes(i + 1);
-    ctx.globalAlpha = has ? 1 : 0.22;
-    ctx.drawImage(Sprites.dragonball, VW - 100 + i * 10, 28);
+    ctx.globalAlpha = has ? 1 : 0.25;
+    drawVBall(ctx, VW - 96 + i * 11, 32, 0.78, has ? G.time : 0);
     ctx.globalAlpha = 1;
   }
   // scouter readout (always over 9000, obviously)
@@ -1211,14 +1190,22 @@ function drawDialogue() {
   const top = VH - 12 - boxH;
   panel(16, top, VW - 32, boxH, ['rgba(24,28,52,0.94)', 'rgba(8,8,22,0.94)'], '#ffd824');
   // portrait
-  const img = PORTRAITS[line.who]();
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   rr(24, top + 8, 52, 58, 5); ctx.fill();
-  const sc = Math.min(48 / img.width, 52 / img.height);
   ctx.save();
-  ctx.translate(50, top + 64);
-  ctx.scale(sc, sc);
-  ctx.drawImage(img, -img.width / 2, -img.height);
+  rr(24, top + 8, 52, 58, 5); ctx.clip();
+  const VMAP = { goku: { style: 'goku' }, goku_ss: { style: 'goku', ss: true }, bulma: { style: 'bulma' }, vegeta: { style: 'vegeta' }, ginyu: { style: 'ginyu' }, frieza: { style: 'frieza' } };
+  if (VMAP[line.who]) {
+    drawVChar(ctx, 50, top + 63, Object.assign({ pose: 'idle', anim: G.time, scale: 1.02 }, VMAP[line.who]));
+  } else if (line.who === 'mech') {
+    drawVMech(ctx, 50, top + 63, { scale: 0.85 });
+  } else {
+    const img = PORTRAITS[line.who]();
+    const sc = Math.min(48 / img.width, 52 / img.height);
+    ctx.translate(50, top + 64);
+    ctx.scale(sc, sc);
+    ctx.drawImage(img, -img.width / 2, -img.height);
+  }
   ctx.restore();
   drawTextC(NAMES[line.who], 50, top + 14, 8, '#ffd824');
   // text with wrapping
