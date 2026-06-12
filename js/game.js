@@ -628,6 +628,16 @@ function drawMenuButton(label, y, selected) {
 }
 
 function updateTitle(dt) {
+  if (window.__updatePending && G.titleT > 0.5) {
+    try {
+      if (!sessionStorage.getItem('dd_reloaded')) { // guard against reload loops
+        sessionStorage.setItem('dd_reloaded', '1');
+        location.reload();
+        return;
+      }
+    } catch (e) {}
+    window.__updatePending = false;
+  }
   G.titleT += dt;
   if (AudioSys.current !== 'title' && G.titleT > 0.2) AudioSys.playMusic('title');
   const items = titleMenuItems();
@@ -646,7 +656,7 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
-const GAME_VERSION = 'v7';
+const GAME_VERSION = 'v8';
 function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT, VW, VH);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
@@ -1328,3 +1338,27 @@ setInterval(() => {
 
 // deterministic stepper for automated testing
 window.__step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) safeTick(dt); return G.state; };
+
+
+// ---------------- auto-update ----------------
+// A tab left open would otherwise play an old build forever. Check a tiny
+// version file when the tab wakes up and every few minutes; apply the new
+// build at the title screen (never mid-level — local save keeps progress).
+window.__updatePending = false;
+async function checkVersion() {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const j = await r.json();
+    if (j && j.v && j.v === GAME_VERSION) { try { sessionStorage.removeItem('dd_reloaded'); } catch (e) {} }
+    if (j && j.v && j.v !== GAME_VERSION && !window.__updatePending) {
+      window.__updatePending = true;
+      if (G.state === 'play' || G.state === 'boss') {
+        G.toast('New version downloaded! It loads at the title screen.', 3.5);
+      }
+    }
+  } catch (e) { /* offline is fine */ }
+}
+setInterval(checkVersion, 4 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+window.addEventListener('pageshow', e => { if (e.persisted) checkVersion(); }); // iOS back-forward cache restore
+checkVersion();
