@@ -656,7 +656,7 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
-const GAME_VERSION = 'v9';
+const GAME_VERSION = 'v10';
 function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT, VW, VH);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
