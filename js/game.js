@@ -3,15 +3,19 @@
 // ============================================================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-// dynamic internal resolution: landscape 480x270, portrait 270x480
+// dynamic internal resolution: landscape 480x270, portrait 270x480.
+// The canvas backing store is RS× that for clean, high-detail rendering;
+// all game code keeps drawing in logical VW×VH coordinates.
 let VW = 480, VH = 270;
+const RS = 2;
 
-// touch button layout, recomputed for the current resolution
+// touch button layout — KI sits well above JUMP so a thumb on one never
+// hides the other; transform lives on the stick side.
 const BTN = {};
 function layoutButtons() {
-  BTN.jump = { x: VW - 48, y: VH - 44, r: 30 };
-  BTN.attack = { x: VW - 116, y: VH - 32, r: 25 };
-  BTN.transform = { x: VW - 48, y: VH - 104, r: 18 };
+  BTN.jump = { x: VW - 46, y: VH - 46, r: 30 };
+  BTN.attack = { x: VW - 46, y: VH - 124, r: 26 };
+  BTN.transform = { x: 56, y: VH - 134, r: 18 };
   BTN.pause = { x: 16, y: 14, r: 13 };
   BTN.mute = { x: VW - 16, y: 14, r: 13 };
 }
@@ -22,13 +26,12 @@ function fitCanvas() {
   if (!ww || !wh) return; // transient zero-size; try again later
   const portrait = wh > ww;
   const nw = portrait ? 270 : 480, nh = portrait ? 480 : 270;
-  if (nw !== VW || nh !== VH) {
+  if (nw !== VW || nh !== VH || canvas.width !== VW * RS) {
     VW = nw; VH = nh;
-    canvas.width = VW; canvas.height = VH;
+    canvas.width = VW * RS; canvas.height = VH * RS;
     layoutButtons();
   }
-  let scale = Math.min(ww / VW, wh / VH);
-  if (scale > 1.5) scale = Math.floor(scale * 2) / 2;
+  const scale = Math.min(ww / VW, wh / VH);
   canvas.style.width = (VW * scale) + 'px';
   canvas.style.height = (VH * scale) + 'px';
 }
@@ -612,11 +615,10 @@ function chapterRowY(i) { return Math.round(VH * 0.32) + i * 30; }
 
 function drawMenuButton(label, y, selected) {
   const w = Math.min(VW - 40, 220);
-  ctx.fillStyle = selected ? 'rgba(255,216,36,0.92)' : 'rgba(10,10,28,0.78)';
-  ctx.fillRect(VW / 2 - w / 2, y - 13, w, 26);
-  ctx.strokeStyle = selected ? '#ffffff' : '#ffd824';
-  ctx.strokeRect(VW / 2 - w / 2 + 0.5, y - 12.5, w - 1, 25);
-  drawTextC(label, VW / 2, y, 11, selected ? '#16161f' : '#ffffff');
+  panel(VW / 2 - w / 2, y - 13, w, 26,
+    selected ? ['#ffe864', '#e8a818'] : ['rgba(26,30,56,0.88)', 'rgba(10,10,28,0.88)'],
+    selected ? '#ffffff' : 'rgba(255,216,36,0.7)');
+  drawTextC(label, VW / 2, y + 1, 11, selected ? '#16161f' : '#ffffff');
 }
 
 function updateTitle(dt) {
@@ -638,7 +640,7 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
-const GAME_VERSION = 'v3';
+const GAME_VERSION = 'v4';
 function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
@@ -714,6 +716,56 @@ function drawChapters() {
     drawMenuButton(label, chapterRowY(i), i === G.menuIdx);
   }
   drawTextC('Dragon Balls you already found stay collected!', VW / 2, VH - 18, 8, '#52d8c8');
+}
+
+// ---------------- drawing helpers ----------------
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// glossy panel with soft shadow — the core of the "clean" UI look
+function panel(x, y, w, h, fill, border) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  if (Array.isArray(fill)) { g.addColorStop(0, fill[0]); g.addColorStop(1, fill[1]); ctx.fillStyle = g; }
+  else ctx.fillStyle = fill;
+  rr(x, y, w, h, Math.min(8, h / 3));
+  ctx.fill();
+  ctx.restore();
+  if (border) { ctx.strokeStyle = border; ctx.lineWidth = 1.2; rr(x + 0.5, y + 0.5, w - 1, h - 1, Math.min(8, h / 3)); ctx.stroke(); ctx.lineWidth = 1; }
+  // top sheen
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  rr(x + 2, y + 2, w - 4, Math.max(3, h * 0.28), 4);
+  ctx.fill();
+}
+// soft round 3D button
+function buttonFace(b, color, label, labelSize = 9, labelColor = '#ffffff') {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 2;
+  const g = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.45, b.r * 0.2, b.x, b.y, b.r);
+  g.addColorStop(0, color[0]); g.addColorStop(1, color[1]);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 1, 0, 7); ctx.stroke();
+  ctx.lineWidth = 1;
+  drawTextC(label, b.x, b.y, labelSize, labelColor);
+}
+function softShadow(x, y, w) {
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(x, y + 1.5, w, w * 0.28, 0, 0, 7); ctx.fill();
 }
 
 // ---------------- text helper (canvas font) ----------------
@@ -802,6 +854,7 @@ function drawWorld() {
     if (e.hurtT > 0 && Math.floor(e.hurtT * 30) % 2 === 0) continue;
     const f2 = Math.floor((G.time + e.t) * 6) % 2 === 0;
     const flip = G.player.x < e.x;
+    if (G.level.mode !== 'fly' && e.kind !== 'asteroid') softShadow(x, y, e.w * 0.55);
     switch (e.kind) {
       case 'rrbot': drawSprite(ctx, f2 ? Sprites.rrbot1 : Sprites.rrbot2, x, y, e.dir > 0, 1.2); break;
       case 'drone': {
@@ -878,6 +931,11 @@ function drawPlayer(camX, camY) {
   let img;
   const px = p.x - camX;
   const py = (p.flyMode ? p.fy + 7 : p.y) - camY;
+
+  if (!p.flyMode && p.deadT <= 0) {
+    const gf = floorAt(G.level, p.x, p.y, 60, 2);
+    softShadow(px, (gf ? gf.y : p.y) - camY, 9);
+  }
 
   // SS aura glow
   if (p.ss) {
@@ -971,19 +1029,25 @@ function drawKameBeam(camX, camY) {
 // ---------------- HUD ----------------
 function drawHUD() {
   const p = G.player;
-  // zeni
-  ctx.drawImage(Sprites.zeni, 34, 8);
+  // status panel: zeni + ki
+  panel(28, 5, 96, 32, ['rgba(20,24,44,0.78)', 'rgba(10,12,26,0.78)'], 'rgba(255,255,255,0.25)');
+  ctx.drawImage(Sprites.zeni, 36, 10);
   const zeniCol = G.zeni === 0 && Math.floor(G.time * 4) % 2 ? '#ff5050' : '#ffd824';
-  drawTextL('' + G.zeni, 44, 12, 11, zeniCol);
-  // ki bar
-  drawTextL('KI', 34, 26, 8, '#9ad1ff');
-  ctx.fillStyle = '#22242e'; ctx.fillRect(48, 22, 62, 7);
+  drawTextL('' + G.zeni, 47, 14, 11, zeniCol);
+  drawTextL('KI', 36, 28, 8, '#9ad1ff');
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(48, 24, 68, 8, 4); ctx.fill();
   const kr = p.ki / p.kiMax;
-  ctx.fillStyle = kr >= 0.99 ? (Math.floor(G.time * 6) % 2 ? '#ffffff' : '#52d8f0') : '#52d8f0';
-  ctx.fillRect(49, 23, 60 * kr, 5);
-  if (kr >= 0.99 && !p.ss) drawTextL('KAMEHAMEHA READY! (hold attack)', 34, 38, 7, '#c8f4ff');
-  if (p.ss && !p.ssPermanent) drawTextL('SS ' + Math.ceil(p.ssT) + 's', 34, 38, 9, '#ffe23a');
-  if (p.ss && p.ssPermanent) drawTextL('SUPER SAIYAN', 34, 38, 9, '#ffe23a');
+  if (kr > 0.02) {
+    const kg = ctx.createLinearGradient(0, 24, 0, 32);
+    if (kr >= 0.99 && Math.floor(G.time * 6) % 2) { kg.addColorStop(0, '#ffffff'); kg.addColorStop(1, '#9ae8ff'); }
+    else { kg.addColorStop(0, '#8ae8ff'); kg.addColorStop(1, '#2a9ad0'); }
+    ctx.fillStyle = kg;
+    rr(49, 25, 66 * kr, 6, 3); ctx.fill();
+  }
+  if (kr >= 0.99 && !p.ss) drawTextL('KAMEHAMEHA READY! (hold attack)', 30, 44, 7, '#c8f4ff');
+  if (p.ss && !p.ssPermanent) drawTextL('SS ' + Math.ceil(p.ssT) + 's', 30, 44, 9, '#ffe23a');
+  if (p.ss && p.ssPermanent) drawTextL('SUPER SAIYAN', 30, 44, 9, '#ffe23a');
   // dragon balls
   for (let i = 0; i < 7; i++) {
     const has = G.save.balls.includes(i + 1);
@@ -996,10 +1060,14 @@ function drawHUD() {
   // boss hp (top center, clear of touch buttons)
   if (G.boss && !G.boss.dead) {
     const b = G.boss;
-    drawTextC(b.name, VW / 2, 50, 9, '#ff8080');
-    ctx.fillStyle = '#22242e'; ctx.fillRect(VW / 2 - 80, 56, 160, 8);
-    ctx.fillStyle = b.kind === 'frieza' && b.phase === 1 ? '#e060ff' : '#e03131';
-    ctx.fillRect(VW / 2 - 79, 57, 158 * (b.hp / b.hpMax), 6);
+    drawTextC(b.name, VW / 2, 52, 9, '#ffb0b0', 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    rr(VW / 2 - 80, 58, 160, 9, 4); ctx.fill();
+    const bg = ctx.createLinearGradient(0, 58, 0, 67);
+    if (b.kind === 'frieza' && b.phase === 1) { bg.addColorStop(0, '#f090ff'); bg.addColorStop(1, '#a020c0'); }
+    else { bg.addColorStop(0, '#ff7060'); bg.addColorStop(1, '#b01818'); }
+    ctx.fillStyle = bg;
+    if (b.hp > 0) { rr(VW / 2 - 79, 59, 158 * (b.hp / b.hpMax), 7, 3); ctx.fill(); }
   }
   // toast (wraps on narrow screens)
   if (G.toastT > 0) {
@@ -1030,26 +1098,30 @@ function drawHUD() {
   }
   // touch controls
   if (Input.isTouch && (G.state === 'play' || G.state === 'boss') && !G.dialogue) {
-    ctx.globalAlpha = 0.3;
+    ctx.globalAlpha = 0.55;
     // stick hint
     const stY = VH - 48;
-    ctx.strokeStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(60, stY, 28, 0, 7); ctx.stroke();
-    drawTextC('<', 40, stY, 14, '#ffffff');
-    drawTextC('>', 80, stY, 14, '#ffffff');
-    if (G.level.mode === 'fly') { drawTextC('^', 60, stY - 18, 12, '#ffffff'); drawTextC('v', 60, stY + 18, 12, '#ffffff'); }
-    // buttons
-    ctx.fillStyle = '#2a4fd6'; ctx.beginPath(); ctx.arc(BTN.jump.x, BTN.jump.y, BTN.jump.r, 0, 7); ctx.fill();
-    ctx.fillStyle = '#e07820'; ctx.beginPath(); ctx.arc(BTN.attack.x, BTN.attack.y, BTN.attack.r, 0, 7); ctx.fill();
-    ctx.globalAlpha = 0.85;
-    drawTextC(G.level.mode === 'fly' ? 'UP' : 'JUMP', BTN.jump.x, BTN.jump.y, 9, '#ffffff');
-    drawTextC('KI', BTN.attack.x, BTN.attack.y, 9, '#ffffff');
+    const sg = ctx.createRadialGradient(60, stY, 6, 60, stY, 30);
+    sg.addColorStop(0, 'rgba(255,255,255,0.12)'); sg.addColorStop(1, 'rgba(255,255,255,0.02)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(60, stY, 30, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(60, stY, 29, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1;
+    drawTextC('<', 42, stY, 13, '#ffffff');
+    drawTextC('>', 78, stY, 13, '#ffffff');
+    if (G.level.mode === 'fly') { drawTextC('^', 60, stY - 16, 11, '#ffffff'); drawTextC('v', 60, stY + 16, 11, '#ffffff'); }
+    // buttons: KI stacked above JUMP with a clear gap
+    buttonFace(BTN.jump, ['#5a7df0', '#1d3aa8'], G.level.mode === 'fly' ? 'UP' : 'JUMP', 9);
+    buttonFace(BTN.attack, ['#ffab50', '#c05a10'], 'KI', 10);
     if (transformAvailable()) {
       ctx.globalAlpha = 0.85;
-      ctx.fillStyle = '#ffd824'; ctx.beginPath(); ctx.arc(BTN.transform.x, BTN.transform.y, BTN.transform.r + Math.sin(G.time * 8), 0, 7); ctx.fill();
-      drawTextC('SS', BTN.transform.x, BTN.transform.y, 9, '#16161f');
+      const tb = { x: BTN.transform.x, y: BTN.transform.y, r: BTN.transform.r + Math.sin(G.time * 8) };
+      buttonFace(tb, ['#fff0a0', '#e0a800'], 'SS', 9, '#16161f');
+      ctx.globalAlpha = 0.55;
     }
-    ctx.globalAlpha = 0.4;
+    ctx.globalAlpha = 0.5;
     drawTextC('II', BTN.pause.x, BTN.pause.y, 11, '#ffffff');
     ctx.globalAlpha = 1;
   }
@@ -1076,14 +1148,11 @@ function drawDialogue() {
   }
   const boxH = Math.max(74, nLines * 13 + 28);
   const top = VH - 12 - boxH;
-  ctx.fillStyle = 'rgba(8,8,20,0.88)';
-  ctx.fillRect(16, top, VW - 32, boxH);
-  ctx.strokeStyle = '#ffd824';
-  ctx.strokeRect(16.5, top + 0.5, VW - 33, boxH - 1);
+  panel(16, top, VW - 32, boxH, ['rgba(24,28,52,0.94)', 'rgba(8,8,22,0.94)'], '#ffd824');
   // portrait
   const img = PORTRAITS[line.who]();
-  ctx.fillStyle = '#22242e';
-  ctx.fillRect(24, top + 8, 52, 58);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  rr(24, top + 8, 52, 58, 5); ctx.fill();
   const sc = Math.min(48 / img.width, 52 / img.height);
   ctx.save();
   ctx.translate(50, top + 64);
@@ -1169,6 +1238,8 @@ function tick(dt) {
 // show the error on screen so it can be reported.
 let crashMsg = null;
 function safeTick(dt) {
+  ctx.setTransform(RS, 0, 0, RS, 0, 0);
+  ctx.imageSmoothingEnabled = false; // keep sprite pixels crisp; cached art is pre-rendered hi-res
   try {
     tick(dt);
   } catch (err) {
@@ -1206,4 +1277,4 @@ setInterval(() => {
 }, 100);
 
 // deterministic stepper for automated testing
-window.__step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt); return G.state; };
+window.__step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) safeTick(dt); return G.state; };

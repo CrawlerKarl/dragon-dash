@@ -412,8 +412,94 @@ function dashAt(level, x, y) {
 // ---------------- rendering ----------------
 function hashXY(x, y) { return ((x * 73856093) ^ (y * 19349663)) >>> 0; }
 
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+  const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+  const b = Math.max(0, Math.min(255, (n & 255) + amt));
+  return `rgb(${r},${g},${b})`;
+}
+
+// soft radial glow (suns, light sources)
+function glowCircle(ctx, x, y, r, core, glowColor) {
+  const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 2.2);
+  g.addColorStop(0, glowColor);
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r * 2.2, 0, 7); ctx.fill();
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+}
+
+// pre-rendered 32px tile set per theme — beveled, gradient "16-bit" tiles
+// drawn at 16 logical px (= 32 device px at RS 2), so full detail survives.
+const TileCache = {};
+function tileSet(theme) {
+  if (TileCache[theme]) return TileCache[theme];
+  const th = THEMES[theme];
+  const D = 32;
+  const mk = fn => { const cv = document.createElement('canvas'); cv.width = D; cv.height = D; const g = cv.getContext('2d'); fn(g); return cv; };
+  const fillBase = (g, v) => {
+    const gr = g.createLinearGradient(0, 0, 0, D);
+    gr.addColorStop(0, th.fill); gr.addColorStop(1, th.fillD);
+    g.fillStyle = gr; g.fillRect(0, 0, D, D);
+    g.fillStyle = 'rgba(0,0,0,0.13)';
+    for (let i = 0; i < 5; i++) g.fillRect((i * 13 + v * 7) % 27, (i * 9 + v * 11) % 27, 4, 2);
+    g.fillStyle = 'rgba(255,255,255,0.07)';
+    for (let i = 0; i < 4; i++) g.fillRect((i * 17 + v * 5) % 27, (i * 7 + v * 13) % 27, 3, 2);
+  };
+  const cap = g => {
+    const gr = g.createLinearGradient(0, 0, 0, 10);
+    gr.addColorStop(0, shade(th.top, 42)); gr.addColorStop(1, th.top);
+    g.fillStyle = gr; g.fillRect(0, 0, D, 9);
+    g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(0, 0, D, 2);
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(0, 9, D, 2);
+  };
+  const set = {
+    fill1: mk(g => fillBase(g, 1)),
+    fill2: mk(g => fillBase(g, 2)),
+    top: mk(g => { fillBase(g, 0); cap(g); }),
+    plat: mk(g => {
+      const gr = g.createLinearGradient(0, 0, 0, 14);
+      gr.addColorStop(0, shade(th.top, 42)); gr.addColorStop(1, shade(th.top, -30));
+      g.fillStyle = gr; g.fillRect(0, 0, D, 12);
+      g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(0, 0, D, 2);
+      g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, 12, D, 3);
+    }),
+    slopeUp: mk(g => {
+      g.beginPath(); g.moveTo(0, D); g.lineTo(D, 0); g.lineTo(D, D); g.closePath(); g.save(); g.clip();
+      fillBase(g, 3);
+      g.restore();
+      g.strokeStyle = th.top; g.lineWidth = 8;
+      g.beginPath(); g.moveTo(-3, D + 3); g.lineTo(D + 3, -3); g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(-3, D); g.lineTo(D, -3); g.stroke();
+    }),
+    slopeDn: mk(g => {
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(D, D); g.lineTo(0, D); g.closePath(); g.save(); g.clip();
+      fillBase(g, 4);
+      g.restore();
+      g.strokeStyle = th.top; g.lineWidth = 8;
+      g.beginPath(); g.moveTo(-3, -3); g.lineTo(D + 3, D + 3); g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(-3, 0); g.lineTo(D, D + 3); g.stroke();
+    }),
+    spike: mk(g => {
+      for (let i = 0; i < 4; i++) {
+        const x0 = i * 8;
+        const gr = g.createLinearGradient(x0, 0, x0 + 8, 0);
+        gr.addColorStop(0, '#f0f4fc'); gr.addColorStop(0.5, '#a8b0c4'); gr.addColorStop(1, '#525a70');
+        g.fillStyle = gr;
+        g.beginPath(); g.moveTo(x0, D); g.lineTo(x0 + 4, 9); g.lineTo(x0 + 8, D); g.fill();
+      }
+    }),
+  };
+  TileCache[theme] = set;
+  return set;
+}
+
 function drawTiles(ctx, level, camX, camY, time) {
-  const th = THEMES[level.theme];
+  const set = tileSet(level.theme);
   const x0 = Math.max(0, Math.floor(camX / TILE));
   const x1 = Math.min(level.W - 1, Math.ceil((camX + VW) / TILE));
   const y0 = Math.max(0, Math.floor(camY / TILE));
@@ -425,37 +511,21 @@ function drawTiles(ctx, level, camX, camY, time) {
       const px = tx * TILE - camX, py = ty * TILE - camY;
       const h = hashXY(tx, ty);
       if (t === T_SOLID) {
-        const topOpen = tileAt(level, tx, ty - 1) === T_EMPTY || tileAt(level, tx, ty - 1) >= T_SPIKE;
-        ctx.fillStyle = (h % 7 === 0) ? th.fillD : th.fill;
-        ctx.fillRect(px, py, TILE, TILE);
-        if (h % 5 === 0) { ctx.fillStyle = th.fillD; ctx.fillRect(px + (h % 12), py + ((h >> 4) % 12), 3, 2); }
-        if (topOpen) { ctx.fillStyle = th.top; ctx.fillRect(px, py, TILE, 4); ctx.fillStyle = th.accent; if (h % 3 === 0) ctx.fillRect(px + (h % 13), py, 2, 2); }
+        const above = tileAt(level, tx, ty - 1);
+        const topOpen = above === T_EMPTY || above >= T_SPIKE;
+        ctx.drawImage(topOpen ? set.top : (h % 3 ? set.fill1 : set.fill2), px, py, TILE, TILE);
       } else if (t === T_PLAT) {
-        ctx.fillStyle = th.top; ctx.fillRect(px, py, TILE, 5);
-        ctx.fillStyle = th.fillD; ctx.fillRect(px, py + 5, TILE, 3);
+        ctx.drawImage(set.plat, px, py, TILE, TILE);
       } else if (t === T_SLOPE_UP) {
-        ctx.fillStyle = th.fill;
-        for (let i = 0; i < TILE; i++) ctx.fillRect(px + i, py + TILE - 1 - i, 1, i + 1);
-        ctx.fillStyle = th.top;
-        for (let i = 0; i < TILE; i++) ctx.fillRect(px + i, py + TILE - 1 - i, 1, 3);
+        ctx.drawImage(set.slopeUp, px, py, TILE, TILE);
       } else if (t === T_SLOPE_DN) {
-        ctx.fillStyle = th.fill;
-        for (let i = 0; i < TILE; i++) ctx.fillRect(px + i, py + i, 1, TILE - i);
-        ctx.fillStyle = th.top;
-        for (let i = 0; i < TILE; i++) ctx.fillRect(px + i, py + i, 1, 3);
+        ctx.drawImage(set.slopeDn, px, py, TILE, TILE);
       } else if (t === T_SPIKE) {
-        ctx.fillStyle = '#c9ccd8';
-        for (let i = 0; i < 4; i++) {
-          ctx.beginPath();
-          ctx.moveTo(px + i * 4, py + TILE);
-          ctx.lineTo(px + i * 4 + 2, py + 6);
-          ctx.lineTo(px + i * 4 + 4, py + TILE);
-          ctx.fill();
-        }
+        ctx.drawImage(set.spike, px, py, TILE, TILE);
       } else if (t === T_DASH) {
-        ctx.fillStyle = th.fill; ctx.fillRect(px, py, TILE, TILE);
+        ctx.drawImage(set.fill1, px, py, TILE, TILE);
         const ph = Math.floor(time * 10) % 3;
-        ctx.fillStyle = ph === 0 ? '#ffd824' : '#ffaa00';
+        ctx.fillStyle = ph === 0 ? '#ffe864' : '#ffaa00';
         ctx.beginPath();
         ctx.moveTo(px + 2, py + 3); ctx.lineTo(px + 8, py + 8); ctx.lineTo(px + 2, py + 13); ctx.fill();
         ctx.beginPath();
@@ -480,14 +550,19 @@ function drawBackground(ctx, theme, camX, camY, time) {
   const horizon = H * 0.78; // skyline base
   if (theme === 'city') {
     // sun + clouds
-    ctx.fillStyle = '#fff7d0'; ctx.beginPath(); ctx.arc(W * 0.83, H * 0.17, 18, 0, 7); ctx.fill();
+    glowCircle(ctx, W * 0.83, H * 0.17, 16, '#fffbe0', 'rgba(255,244,200,0.55)');
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     for (let i = 0; i < 5; i++) {
       const cx = ((i * 170 - camX * 0.1 + time * 4) % 600 + 600) % 600 - 60;
-      ctx.fillRect(cx, H * 0.11 + i * H * 0.08, 50, 8); ctx.fillRect(cx + 10, H * 0.09 + i * H * 0.08, 30, 8);
+      ctx.beginPath();
+      ctx.ellipse(cx + 25, H * 0.11 + i * H * 0.08 + 4, 28, 7, 0, 0, 7);
+      ctx.ellipse(cx + 40, H * 0.09 + i * H * 0.08 + 4, 16, 6, 0, 0, 7);
+      ctx.fill();
     }
     // far skyline
-    ctx.fillStyle = '#a8c4dd';
+    const fg = ctx.createLinearGradient(0, horizon - 110, 0, H);
+    fg.addColorStop(0, '#b8d0e8'); fg.addColorStop(1, '#90accc');
+    ctx.fillStyle = fg;
     for (let i = 0; i < 14; i++) {
       const bx = ((i * 90 - camX * 0.25) % 1260 + 1260) % 1260 - 90;
       const h = 60 + (hashXY(i, 7) % 50);
@@ -498,22 +573,31 @@ function drawBackground(ctx, theme, camX, camY, time) {
         ctx.fillStyle = '#3a5a80';
         ctx.fillText('CAPSULE', bx + 28, horizon - h - 14);
         ctx.fillText('CORP', bx + 28, horizon - h - 6);
-        ctx.fillStyle = '#a8c4dd';
+        ctx.fillStyle = fg;
       }
     }
+    // haze band at the horizon for depth
+    const hz = ctx.createLinearGradient(0, horizon - 30, 0, horizon + 26);
+    hz.addColorStop(0, 'rgba(255,255,255,0)');
+    hz.addColorStop(0.55, 'rgba(235,245,255,0.34)');
+    hz.addColorStop(1, 'rgba(235,245,255,0)');
+    ctx.fillStyle = hz;
+    ctx.fillRect(0, horizon - 30, W, 56);
     // near skyline
-    ctx.fillStyle = '#7e9cc0';
+    const ng = ctx.createLinearGradient(0, horizon - 70, 0, H);
+    ng.addColorStop(0, '#8aa8cc'); ng.addColorStop(1, '#6884ac');
+    ctx.fillStyle = ng;
     for (let i = 0; i < 12; i++) {
       const bx = ((i * 120 - camX * 0.5) % 1440 + 1440) % 1440 - 120;
       const h = 40 + (hashXY(i, 3) % 60);
       const base = H * 0.89;
       ctx.fillRect(bx, base - h, 70, h + H - base);
-      ctx.fillStyle = '#ffe9a8';
+      ctx.fillStyle = 'rgba(255,233,168,0.9)';
       for (let w = 0; w < 6; w++) if (hashXY(i, w) % 3 === 0) ctx.fillRect(bx + 8 + (w % 3) * 20, base + 10 - h + Math.floor(w / 3) * 18, 6, 8);
-      ctx.fillStyle = '#7e9cc0';
+      ctx.fillStyle = ng;
     }
   } else if (theme === 'wasteland') {
-    ctx.fillStyle = '#ff7b2e'; ctx.beginPath(); ctx.arc(W * 0.25, H * 0.22, 26, 0, 7); ctx.fill();
+    glowCircle(ctx, W * 0.25, H * 0.22, 24, '#ff8b3e', 'rgba(255,150,60,0.45)');
     ctx.fillStyle = '#e8a060';
     for (let i = 0; i < 8; i++) {
       const mx = ((i * 180 - camX * 0.2) % 1440 + 1440) % 1440 - 120;
@@ -538,14 +622,21 @@ function drawBackground(ctx, theme, camX, camY, time) {
       ctx.fillStyle = tw ? '#ffffff' : (i % 3 === 0 ? '#9ad1ff' : '#666a88');
       ctx.fillRect(sx, sy, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
     }
+    // nebulae for depth
+    const nb1 = ctx.createRadialGradient(W * 0.3, H * 0.35, 8, W * 0.3, H * 0.35, W * 0.32);
+    nb1.addColorStop(0, 'rgba(120,60,200,0.16)'); nb1.addColorStop(1, 'rgba(120,60,200,0)');
+    ctx.fillStyle = nb1; ctx.fillRect(0, 0, W, H);
+    const nb2 = ctx.createRadialGradient(W * 0.75, H * 0.7, 8, W * 0.75, H * 0.7, W * 0.3);
+    nb2.addColorStop(0, 'rgba(40,120,220,0.14)'); nb2.addColorStop(1, 'rgba(40,120,220,0)');
+    ctx.fillStyle = nb2; ctx.fillRect(0, 0, W, H);
     // distant planets
-    ctx.fillStyle = '#3fae49'; ctx.beginPath(); ctx.arc(W * 0.9 - camX * 0.02 % 100, H * 0.22, 14, 0, 7); ctx.fill();
+    glowCircle(ctx, W * 0.9 - camX * 0.02 % 100, H * 0.22, 13, '#3fae49', 'rgba(80,220,120,0.3)');
     ctx.fillStyle = '#2c7a36'; ctx.beginPath(); ctx.arc(W * 0.9 - 4 - camX * 0.02 % 100, H * 0.22 - 4, 5, 0, 7); ctx.fill();
-    ctx.fillStyle = '#c87830'; ctx.beginPath(); ctx.arc(W * 0.17, H * 0.74, 9, 0, 7); ctx.fill();
+    glowCircle(ctx, W * 0.17, H * 0.74, 8, '#c87830', 'rgba(220,140,60,0.25)');
   } else if (theme === 'namek') {
     // green sky, two suns
-    ctx.fillStyle = '#fff7a0'; ctx.beginPath(); ctx.arc(W * 0.79, H * 0.15, 14, 0, 7); ctx.fill();
-    ctx.fillStyle = '#ffe23a'; ctx.beginPath(); ctx.arc(W * 0.67, H * 0.26, 9, 0, 7); ctx.fill();
+    glowCircle(ctx, W * 0.79, H * 0.15, 13, '#fff9b8', 'rgba(255,250,180,0.5)');
+    glowCircle(ctx, W * 0.67, H * 0.26, 8, '#ffe23a', 'rgba(255,226,58,0.4)');
     // distant islands + water
     const water = H * 0.83;
     ctx.fillStyle = '#7adfb0';
@@ -553,7 +644,9 @@ function drawBackground(ctx, theme, camX, camY, time) {
       const ix = ((i * 200 - camX * 0.2) % 1200 + 1200) % 1200 - 100;
       ctx.beginPath(); ctx.ellipse(ix + 60, water - 10, 80, 22, 0, 0, 7); ctx.fill();
     }
-    ctx.fillStyle = '#2a8ad0'; ctx.fillRect(0, water, W, H - water);
+    const wg = ctx.createLinearGradient(0, water, 0, H);
+    wg.addColorStop(0, '#4aa8e8'); wg.addColorStop(1, '#1d5fa0');
+    ctx.fillStyle = wg; ctx.fillRect(0, water, W, H - water);
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     for (let i = 0; i < 10; i++) {
       const wx = ((i * 70 - camX * 0.35 + time * 12) % 550 + 550) % 550 - 35;

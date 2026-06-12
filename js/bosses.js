@@ -357,6 +357,7 @@ function drawBoss(ctx, camX, camY) {
   const b = G.boss;
   if (!b) return;
   const x = b.x - camX, y = b.y - camY;
+  if (b.kind !== 'ginyu' && !b.dead) softShadow(x, b.groundY - camY, 15);
   if (b.hurtT > 0 && Math.floor(b.hurtT * 30) % 2 === 0) return; // hit flicker
   let img = null;
   const f2 = Math.floor(b.t * 4) % 2 === 0;
