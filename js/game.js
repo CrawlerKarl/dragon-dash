@@ -247,6 +247,7 @@ const DIALOGUES = {
   ],
   pre_vegeta: [
     { who: 'vegeta', text: "Kakarot! Hand over the Dragon Balls, you low-class clown." },
+    { who: 'vegeta', text: "Wait... my scouter says your power level... IT'S OVER 9000!? THAT CAN'T BE RIGHT!" },
     { who: 'goku', text: "Vegeta! I don't want to fight you... but I will!" },
   ],
   post_vegeta: [
@@ -637,11 +638,31 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
+const GAME_VERSION = 'v3';
 function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
-  // logo
   const ly = Math.round(VH * 0.18);
+  // shenron silhouette winding across the sky
+  ctx.strokeStyle = 'rgba(44,122,54,0.85)';
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.moveTo(-10, ly + 90);
+  for (let i = 0; i <= 16; i++) {
+    const tt = i / 16;
+    ctx.lineTo(tt * (VW + 20) - 10, ly + 90 - tt * 110 + Math.sin(tt * 7 + G.time * 1.2) * 14);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  drawSprite(ctx, Sprites.shenron, VW - 24, ly - 8 + Math.sin(G.time * 1.2 + 7) * 6, false, 1.5);
+  // giant glowing dragon ball behind the logo
+  const glow = 0.25 + Math.sin(G.time * 2.5) * 0.08;
+  ctx.fillStyle = `rgba(255,180,40,${glow})`;
+  ctx.beginPath(); ctx.arc(VW / 2, ly + 22, 64, 0, 7); ctx.fill();
+  ctx.globalAlpha = 0.95;
+  drawSprite(ctx, Sprites.dragonball, VW / 2, ly + 70, false, 14);
+  ctx.globalAlpha = 1;
+  // logo
   drawTextC('DRAGON', VW / 2, ly, 40, '#ff8c1a', '#16161f');
   drawTextC('DASH', VW / 2, ly + 42, 40, '#ffd824', '#16161f');
   drawTextC('~ a Dragon Ball Z adventure ~', VW / 2, ly + 66, 10, '#9ad1ff');
@@ -665,6 +686,7 @@ function drawTitle() {
     }
     ctx.globalAlpha = 1;
   }
+  drawTextC(GAME_VERSION, VW - 14, VH - 8, 7, '#c9ccd8');
 }
 function updateChapters(dt) {
   const n = Math.min(G.save.maxZone, 3) + 1;
@@ -890,13 +912,18 @@ function drawPlayer(camX, camY) {
       }
     }
   }
-  // charge orb
+  // charge orb + the chant
   if (p.charging) {
     const cy = p.flyMode ? p.fy - camY : py - 15;
     const cx = px + p.facing * 13;
     const r = 3 + Math.min(5, p.chargeT * 3) + Math.sin(G.time * 20) * 1.5;
     ctx.fillStyle = 'rgba(82,216,240,0.5)'; ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, 7); ctx.fill();
     ctx.fillStyle = '#c8f4ff'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+    const chant = p.chargeT < 0.7 ? 'KA...' : p.chargeT < 0.95 ? 'KA-ME...' : p.chargeT < 1.2 ? 'KA-ME-HA...' : 'KA-ME-HA-ME...';
+    drawTextC(chant, px, py - 44 + Math.sin(G.time * 12), 10, '#c8f4ff', '#16161f');
+  }
+  if (p.kameT > 0) {
+    drawTextC('HAAAAA!!!', px, py - 46 + Math.sin(G.time * 25) * 2, 14, '#ffffff', '#1a4fa0');
   }
   // radar arrow
   if (G.save.radar && (G.state === 'play') && !G.dialogue) {
@@ -964,6 +991,8 @@ function drawHUD() {
     ctx.drawImage(Sprites.dragonball, VW - 100 + i * 10, 28);
     ctx.globalAlpha = 1;
   }
+  // scouter readout (always over 9000, obviously)
+  drawTextL('POWER LVL ' + (9001 + G.score * 3 + (p.ss ? 150000000 : 0)), VW - 118, 44, 7, '#7cfc00');
   // boss hp (top center, clear of touch buttons)
   if (G.boss && !G.boss.dead) {
     const b = G.boss;
@@ -995,7 +1024,7 @@ function drawHUD() {
     const a = Math.min(1, G.bannerT > 2 ? (2.6 - G.bannerT) * 2.5 : G.bannerT);
     ctx.globalAlpha = Math.max(0, Math.min(1, a));
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, VH / 2 - 35, VW, 56);
-    drawTextC('ZONE ' + (G.zoneIdx + 1), VW / 2, VH / 2 - 17, 12, '#9ad1ff');
+    drawTextC('SAGA ' + (G.zoneIdx + 1), VW / 2, VH / 2 - 17, 12, '#9ad1ff');
     drawTextC(G.level.name, VW / 2, VH / 2 + 3, 20, '#ffd824');
     ctx.globalAlpha = 1;
   }
@@ -1136,11 +1165,32 @@ function tick(dt) {
   lateInput();
 }
 
+// crash guard: never let an exception kill the loop or freeze silently —
+// show the error on screen so it can be reported.
+let crashMsg = null;
+function safeTick(dt) {
+  try {
+    tick(dt);
+  } catch (err) {
+    crashMsg = String(err && err.message || err).slice(0, 120);
+  }
+  if (crashMsg) {
+    ctx.fillStyle = 'rgba(180,20,20,0.92)';
+    ctx.fillRect(0, 0, VW, 30);
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('ERROR: ' + crashMsg, VW / 2, 10);
+    ctx.fillText('screenshot this & send it to Andrew!', VW / 2, 22);
+  }
+}
+window.addEventListener('error', e => { crashMsg = String(e.message || 'unknown').slice(0, 120); });
+
 function frame(now) {
   const dt = Math.min(0.033, (now - lastT) / 1000);
   lastT = now;
   lastFrameAt = now;
-  tick(dt);
+  safeTick(dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1151,7 +1201,7 @@ setInterval(() => {
   if (now - lastFrameAt > 250) {
     lastT = now;
     lastFrameAt = now;
-    tick(1 / 30);
+    safeTick(1 / 30);
   }
 }, 100);
 

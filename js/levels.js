@@ -492,7 +492,14 @@ function drawBackground(ctx, theme, camX, camY, time) {
       const bx = ((i * 90 - camX * 0.25) % 1260 + 1260) % 1260 - 90;
       const h = 60 + (hashXY(i, 7) % 50);
       ctx.fillRect(bx, horizon - h, 56, h + H - horizon);
-      if (i % 3 === 0) { ctx.beginPath(); ctx.arc(bx + 28, horizon - h, 28, Math.PI, 0); ctx.fill(); } // capsule domes
+      if (i % 3 === 0) {
+        ctx.beginPath(); ctx.arc(bx + 28, horizon - h, 28, Math.PI, 0); ctx.fill(); // capsule dome
+        ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#3a5a80';
+        ctx.fillText('CAPSULE', bx + 28, horizon - h - 14);
+        ctx.fillText('CORP', bx + 28, horizon - h - 6);
+        ctx.fillStyle = '#a8c4dd';
+      }
     }
     // near skyline
     ctx.fillStyle = '#7e9cc0';

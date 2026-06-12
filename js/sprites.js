@@ -54,11 +54,21 @@ function makeSprite(rows, pal = PAL) {
 }
 
 // ---------------- GOKU (composed from parts, 18 wide) ----------------
+// iconic spiky hair, leaning sideways (normal) — swaps to upright spikes for SS
 const GOKU_HAIR = [
-  '....h...h..h......',
-  '..h.hh.hhhh.h.....',
-  '..hhhhhHhhhh......',
-  '...hhhHhhhhhh.....',
+  '..h...h...h.......',
+  '.hh..hh..hh.......',
+  '.hhh.hhh.hhh......',
+  '..hhhhhhhhhh......',
+  '.hhhHhhHhhhhh.....',
+  '..hhhhhhhhhhh.....',
+];
+const GOKU_HAIR_SS = [
+  '....h..h..h.......',
+  '...hh..hh.hh......',
+  '...hhh.hh.hhh.....',
+  '...hhhhhhhhhh.....',
+  '..hhhHhhHhhhh.....',
   '..hhhhhhhhhhh.....',
 ];
 const GOKU_FACE = [
@@ -72,53 +82,53 @@ const GOKU_TORSO = {
     '....ooooooo.......',
     '...oobooboo.......',
     '..soooooooos......',
-    '..soooooooos......',
+    '..sbooooooobs.....',
     '...oobbbboo.......',
     '....oooooo........',
   ],
   run: [
     '....ooooooo.......',
     '...oobooboo.......',
-    '..sooooooos.......',
-    '...soooooos.......',
+    '..sbooooooos......',
+    '...sbooooobs......',
     '...oobbbboo.......',
     '....oooooo........',
   ],
   punch: [
     '....ooooooo.......',
     '...oobooboo.......',
-    '..sooooooooosss...',
-    '..sooooooo........',
+    '..soooooooobsss...',
+    '..sbooooooo.......',
     '...oobbbboo.......',
     '....oooooo........',
   ],
   blast: [
     '....ooooooo.......',
     '...oobooboo.......',
-    '..soooooooooss....',
-    '..sooooooo..ss....',
+    '..sooooooooobss...',
+    '..sboooooo..ss....',
     '...oobbbboo.......',
     '....oooooo........',
   ],
   charge: [
     '....ooooooo.......',
     '...oobooboo.......',
-    '.ssooooooooss.....',
-    '.ssooooooooss.....',
+    '.sbooooooooobs....',
+    '.sbooooooooobs....',
     '...oobbbboo.......',
     '....oooooo........',
   ],
   kame: [
     '....ooooooo.......',
     '...oobooboo.......',
-    '...ooooooooosss...',
-    '...ooooooooosss...',
+    '...oooooooobsss...',
+    '...oooooooobsss...',
     '...oobbbboo.......',
     '....oooooo........',
   ],
   hurt: [
     '.s..ooooooo..s....',
-    '.s.oobooboo..s....',
+    '.sb.oobooboo.bs...',
     '..soooooooos......',
     '...oooooooo.......',
     '...oobbbboo.......',
@@ -176,8 +186,9 @@ const GOKU_LEGS = {
   ],
 };
 
-function gokuFrame(torso, legs, pal) {
-  return makeSprite([...GOKU_HAIR, ...GOKU_FACE, ...GOKU_TORSO[torso], ...GOKU_LEGS[legs]], pal);
+function gokuFrame(torso, legs, pal, ss) {
+  const hair = ss ? GOKU_HAIR_SS : GOKU_HAIR;
+  return makeSprite([...hair, ...GOKU_FACE, ...GOKU_TORSO[torso], ...GOKU_LEGS[legs]], pal);
 }
 
 // Flying pose (horizontal, facing right, arms forward) 28x12
@@ -538,16 +549,16 @@ function buildSprites() {
   for (const ss of [false, true]) {
     const pal = ss ? PAL_SS : PAL;
     const k = ss ? 'ss_' : '';
-    Sprites[k + 'idle']   = gokuFrame('idle', 'idle', pal);
-    Sprites[k + 'run1']   = gokuFrame('run', 'run1', pal);
-    Sprites[k + 'run2']   = gokuFrame('run', 'run2', pal);
-    Sprites[k + 'run3']   = gokuFrame('run', 'run3', pal);
-    Sprites[k + 'jump']   = gokuFrame('idle', 'jump', pal);
-    Sprites[k + 'punch']  = gokuFrame('punch', 'idle', pal);
-    Sprites[k + 'blast']  = gokuFrame('blast', 'run2', pal);
-    Sprites[k + 'charge'] = gokuFrame('charge', 'crouch', pal);
-    Sprites[k + 'kame']   = gokuFrame('kame', 'run2', pal);
-    Sprites[k + 'hurt']   = gokuFrame('hurt', 'jump', pal);
+    Sprites[k + 'idle']   = gokuFrame('idle', 'idle', pal, ss);
+    Sprites[k + 'run1']   = gokuFrame('run', 'run1', pal, ss);
+    Sprites[k + 'run2']   = gokuFrame('run', 'run2', pal, ss);
+    Sprites[k + 'run3']   = gokuFrame('run', 'run3', pal, ss);
+    Sprites[k + 'jump']   = gokuFrame('idle', 'jump', pal, ss);
+    Sprites[k + 'punch']  = gokuFrame('punch', 'idle', pal, ss);
+    Sprites[k + 'blast']  = gokuFrame('blast', 'run2', pal, ss);
+    Sprites[k + 'charge'] = gokuFrame('charge', 'crouch', pal, ss);
+    Sprites[k + 'kame']   = gokuFrame('kame', 'run2', pal, ss);
+    Sprites[k + 'hurt']   = gokuFrame('hurt', 'jump', pal, ss);
     Sprites[k + 'fly1']   = makeSprite(GOKU_FLY1, pal);
     Sprites[k + 'fly2']   = makeSprite(GOKU_FLY2, pal);
   }
