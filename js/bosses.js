@@ -221,14 +221,14 @@ function updateVegeta(b, p, py, dt) {
 function updateGinyu(b, p, py, dt) {
   switch (b.state) {
     case 'enter':
-      b.x += (G.camX + 400 - b.x) * 2 * dt;
-      b.y = 130 + Math.sin(b.t * 1.5) * 60;
+      b.x += (G.camX + VW - 80 - b.x) * 2 * dt;
+      b.y = VH * 0.48 + Math.sin(b.t * 1.5) * 60;
       if (b.stateT <= 0) { b.state = 'hover'; b.stateT = 2; }
       break;
     case 'hover':
-      b.x += (G.camX + 400 - b.x) * 2.5 * dt;
+      b.x += (G.camX + VW - 80 - b.x) * 2.5 * dt;
       b.y += ((py + 20) + Math.sin(b.t * 2) * 40 - b.y) * 1.8 * dt;
-      b.y = Math.max(40, Math.min(250, b.y));
+      b.y = Math.max(40, Math.min(VH - 20, b.y));
       if (b.stateT <= 0) {
         const r = Math.random();
         if (r < 0.45) { b.state = 'spread'; b.stateT = 0.4; }
@@ -253,7 +253,7 @@ function updateGinyu(b, p, py, dt) {
     case 'charge':
       b.x -= 380 * dt;
       if (b.x < G.camX - 40) {
-        b.x = G.camX + 420;
+        b.x = G.camX + VW - 60;
         b.state = 'hover'; b.stateT = 1.4;
       }
       break;
@@ -382,7 +382,7 @@ function drawBoss(ctx, camX, camY) {
   if (b.kind === 'vegeta' && b.state === 'galick') {
     const dir = b.galickDir;
     const by = y - 19;
-    const len = dir > 0 ? 480 - x : x;
+    const len = dir > 0 ? VW - x : x;
     ctx.fillStyle = 'rgba(190,80,255,0.85)';
     ctx.fillRect(dir > 0 ? x + 14 : x - 14 - len, by - 7, len, 14);
     ctx.fillStyle = '#ffffff';

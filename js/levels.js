@@ -415,9 +415,9 @@ function hashXY(x, y) { return ((x * 73856093) ^ (y * 19349663)) >>> 0; }
 function drawTiles(ctx, level, camX, camY, time) {
   const th = THEMES[level.theme];
   const x0 = Math.max(0, Math.floor(camX / TILE));
-  const x1 = Math.min(level.W - 1, Math.ceil((camX + 480) / TILE));
+  const x1 = Math.min(level.W - 1, Math.ceil((camX + VW) / TILE));
   const y0 = Math.max(0, Math.floor(camY / TILE));
-  const y1 = Math.min(level.H - 1, Math.ceil((camY + 270) / TILE));
+  const y1 = Math.min(level.H - 1, Math.ceil((camY + VH) / TILE));
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const t = level.grid[ty][tx];
@@ -466,94 +466,101 @@ function drawTiles(ctx, level, camX, camY, time) {
 }
 
 function skyGradient(ctx, th) {
-  const g = ctx.createLinearGradient(0, 0, 0, 270);
+  const g = ctx.createLinearGradient(0, 0, 0, VH);
   g.addColorStop(0, th.skyTop); g.addColorStop(1, th.skyBot);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 480, 270);
+  ctx.fillRect(0, 0, VW, VH);
 }
 
+// All painters anchor to VW/VH so the game works in landscape AND portrait.
 function drawBackground(ctx, theme, camX, camY, time) {
   const th = THEMES[theme];
   skyGradient(ctx, th);
+  const W = VW, H = VH;
+  const horizon = H * 0.78; // skyline base
   if (theme === 'city') {
     // sun + clouds
-    ctx.fillStyle = '#fff7d0'; ctx.beginPath(); ctx.arc(400, 45, 18, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff7d0'; ctx.beginPath(); ctx.arc(W * 0.83, H * 0.17, 18, 0, 7); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     for (let i = 0; i < 5; i++) {
       const cx = ((i * 170 - camX * 0.1 + time * 4) % 600 + 600) % 600 - 60;
-      ctx.fillRect(cx, 30 + i * 22, 50, 8); ctx.fillRect(cx + 10, 24 + i * 22, 30, 8);
+      ctx.fillRect(cx, H * 0.11 + i * H * 0.08, 50, 8); ctx.fillRect(cx + 10, H * 0.09 + i * H * 0.08, 30, 8);
     }
     // far skyline
     ctx.fillStyle = '#a8c4dd';
     for (let i = 0; i < 14; i++) {
       const bx = ((i * 90 - camX * 0.25) % 1260 + 1260) % 1260 - 90;
       const h = 60 + (hashXY(i, 7) % 50);
-      ctx.fillRect(bx, 210 - h, 56, h + 60);
-      if (i % 3 === 0) { ctx.beginPath(); ctx.arc(bx + 28, 210 - h, 28, Math.PI, 0); ctx.fill(); } // capsule domes
+      ctx.fillRect(bx, horizon - h, 56, h + H - horizon);
+      if (i % 3 === 0) { ctx.beginPath(); ctx.arc(bx + 28, horizon - h, 28, Math.PI, 0); ctx.fill(); } // capsule domes
     }
     // near skyline
     ctx.fillStyle = '#7e9cc0';
     for (let i = 0; i < 12; i++) {
       const bx = ((i * 120 - camX * 0.5) % 1440 + 1440) % 1440 - 120;
       const h = 40 + (hashXY(i, 3) % 60);
-      ctx.fillRect(bx, 240 - h, 70, h + 30);
+      const base = H * 0.89;
+      ctx.fillRect(bx, base - h, 70, h + H - base);
       ctx.fillStyle = '#ffe9a8';
-      for (let w = 0; w < 6; w++) if (hashXY(i, w) % 3 === 0) ctx.fillRect(bx + 8 + (w % 3) * 20, 250 - h + Math.floor(w / 3) * 18, 6, 8);
+      for (let w = 0; w < 6; w++) if (hashXY(i, w) % 3 === 0) ctx.fillRect(bx + 8 + (w % 3) * 20, base + 10 - h + Math.floor(w / 3) * 18, 6, 8);
       ctx.fillStyle = '#7e9cc0';
     }
   } else if (theme === 'wasteland') {
-    ctx.fillStyle = '#ff7b2e'; ctx.beginPath(); ctx.arc(120, 60, 26, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ff7b2e'; ctx.beginPath(); ctx.arc(W * 0.25, H * 0.22, 26, 0, 7); ctx.fill();
     ctx.fillStyle = '#e8a060';
     for (let i = 0; i < 8; i++) {
       const mx = ((i * 180 - camX * 0.2) % 1440 + 1440) % 1440 - 120;
       ctx.beginPath();
-      ctx.moveTo(mx, 220); ctx.lineTo(mx + 30, 110 + (hashXY(i, 2) % 30)); ctx.lineTo(mx + 90, 105 + (hashXY(i, 5) % 30)); ctx.lineTo(mx + 120, 220);
+      ctx.moveTo(mx, horizon + 10); ctx.lineTo(mx + 30, horizon - 110 + (hashXY(i, 2) % 30)); ctx.lineTo(mx + 90, horizon - 115 + (hashXY(i, 5) % 30)); ctx.lineTo(mx + 120, horizon + 10);
       ctx.fill();
-      ctx.fillRect(mx, 200, 130, 70);
+      ctx.fillRect(mx, horizon - 10, 130, H - horizon + 10);
     }
     ctx.fillStyle = '#c07838';
     for (let i = 0; i < 7; i++) {
       const mx = ((i * 230 - camX * 0.45) % 1610 + 1610) % 1610 - 160;
-      ctx.fillRect(mx, 150 + (hashXY(i, 9) % 20), 60, 130);
-      ctx.fillRect(mx + 15, 135 + (hashXY(i, 9) % 20), 30, 20);
+      const top = horizon - 60 + (hashXY(i, 9) % 20);
+      ctx.fillRect(mx, top, 60, H - top);
+      ctx.fillRect(mx + 15, top - 15, 30, 20);
     }
   } else if (theme === 'space') {
-    ctx.fillStyle = '#05050f'; ctx.fillRect(0, 0, 480, 270);
+    ctx.fillStyle = '#05050f'; ctx.fillRect(0, 0, W, H);
     for (let i = 0; i < 60; i++) {
-      const sx = ((hashXY(i, 1) % 480) - camX * (0.1 + (i % 3) * 0.15) % 480 + 960) % 480;
-      const sy = hashXY(i, 2) % 270;
+      const sx = ((hashXY(i, 1) % W) - camX * (0.1 + (i % 3) * 0.15) % W + W * 2) % W;
+      const sy = hashXY(i, 2) % H;
       const tw = (Math.floor(time * 3) + i) % 5 === 0;
       ctx.fillStyle = tw ? '#ffffff' : (i % 3 === 0 ? '#9ad1ff' : '#666a88');
       ctx.fillRect(sx, sy, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
     }
     // distant planets
-    ctx.fillStyle = '#3fae49'; ctx.beginPath(); ctx.arc(430 - camX * 0.02 % 100, 60, 14, 0, 7); ctx.fill();
-    ctx.fillStyle = '#2c7a36'; ctx.beginPath(); ctx.arc(426 - camX * 0.02 % 100, 56, 5, 0, 7); ctx.fill();
-    ctx.fillStyle = '#c87830'; ctx.beginPath(); ctx.arc(80, 200, 9, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3fae49'; ctx.beginPath(); ctx.arc(W * 0.9 - camX * 0.02 % 100, H * 0.22, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2c7a36'; ctx.beginPath(); ctx.arc(W * 0.9 - 4 - camX * 0.02 % 100, H * 0.22 - 4, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#c87830'; ctx.beginPath(); ctx.arc(W * 0.17, H * 0.74, 9, 0, 7); ctx.fill();
   } else if (theme === 'namek') {
     // green sky, two suns
-    ctx.fillStyle = '#fff7a0'; ctx.beginPath(); ctx.arc(380, 40, 14, 0, 7); ctx.fill();
-    ctx.fillStyle = '#ffe23a'; ctx.beginPath(); ctx.arc(320, 70, 9, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff7a0'; ctx.beginPath(); ctx.arc(W * 0.79, H * 0.15, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffe23a'; ctx.beginPath(); ctx.arc(W * 0.67, H * 0.26, 9, 0, 7); ctx.fill();
     // distant islands + water
+    const water = H * 0.83;
     ctx.fillStyle = '#7adfb0';
     for (let i = 0; i < 6; i++) {
       const ix = ((i * 200 - camX * 0.2) % 1200 + 1200) % 1200 - 100;
-      ctx.beginPath(); ctx.ellipse(ix + 60, 215, 80, 22, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ix + 60, water - 10, 80, 22, 0, 0, 7); ctx.fill();
     }
-    ctx.fillStyle = '#2a8ad0'; ctx.fillRect(0, 225, 480, 45);
+    ctx.fillStyle = '#2a8ad0'; ctx.fillRect(0, water, W, H - water);
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     for (let i = 0; i < 10; i++) {
       const wx = ((i * 70 - camX * 0.35 + time * 12) % 550 + 550) % 550 - 35;
-      ctx.fillRect(wx, 232 + (i % 4) * 9, 26, 2);
+      ctx.fillRect(wx, water + 7 + (i % 4) * 9, 26, 2);
     }
     // ajisa trees (dark teal)
     ctx.fillStyle = '#1d6e58';
     for (let i = 0; i < 6; i++) {
       const tx2 = ((i * 220 - camX * 0.5) % 1320 + 1320) % 1320 - 110;
-      ctx.fillRect(tx2 + 24, 170, 8, 60);
-      ctx.beginPath(); ctx.arc(tx2 + 28, 162, 26, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(tx2 + 8, 178, 16, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(tx2 + 48, 178, 16, 0, 7); ctx.fill();
+      const ty2 = water - 55;
+      ctx.fillRect(tx2 + 24, ty2, 8, 60);
+      ctx.beginPath(); ctx.arc(tx2 + 28, ty2 - 8, 26, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(tx2 + 8, ty2 + 8, 16, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(tx2 + 48, ty2 + 8, 16, 0, 7); ctx.fill();
     }
   }
 }

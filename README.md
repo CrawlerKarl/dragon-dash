@@ -1,6 +1,6 @@
 # Dragon Dash 🐉
 
-A Dragon Ball Z–themed classic-Sonic-style adventure you can play in any browser — phone or computer.
+A Dragon Ball Z–themed classic-Sonic-style adventure you can play in any browser — phone or computer. Works natively in **portrait or landscape**; rotate any time, even mid-game.
 
 **Play it here:** https://crawlerkarl.github.io/dragon-dash/
 

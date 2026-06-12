@@ -3,12 +3,30 @@
 // ============================================================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const VW = 480, VH = 270;
+// dynamic internal resolution: landscape 480x270, portrait 270x480
+let VW = 480, VH = 270;
+
+// touch button layout, recomputed for the current resolution
+const BTN = {};
+function layoutButtons() {
+  BTN.jump = { x: VW - 48, y: VH - 44, r: 30 };
+  BTN.attack = { x: VW - 116, y: VH - 32, r: 25 };
+  BTN.transform = { x: VW - 48, y: VH - 104, r: 18 };
+  BTN.pause = { x: 16, y: 14, r: 13 };
+  BTN.mute = { x: VW - 16, y: 14, r: 13 };
+}
 
 // ---------------- canvas scaling ----------------
 function fitCanvas() {
   const ww = window.innerWidth, wh = window.innerHeight;
   if (!ww || !wh) return; // transient zero-size; try again later
+  const portrait = wh > ww;
+  const nw = portrait ? 270 : 480, nh = portrait ? 480 : 270;
+  if (nw !== VW || nh !== VH) {
+    VW = nw; VH = nh;
+    canvas.width = VW; canvas.height = VH;
+    layoutButtons();
+  }
   let scale = Math.min(ww / VW, wh / VH);
   if (scale > 1.5) scale = Math.floor(scale * 2) / 2;
   canvas.style.width = (VW * scale) + 'px';
@@ -17,6 +35,7 @@ function fitCanvas() {
 window.addEventListener('resize', fitCanvas);
 window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 120));
 setInterval(fitCanvas, 500); // self-heal if a resize was missed
+layoutButtons();
 fitCanvas();
 
 // ---------------- input ----------------
@@ -49,13 +68,6 @@ function canvasPos(t) {
   const r = canvas.getBoundingClientRect();
   return { x: (t.clientX - r.left) / r.width * VW, y: (t.clientY - r.top) / r.height * VH };
 }
-const BTN = {
-  jump: { x: 432, y: 226, r: 30 },
-  attack: { x: 366, y: 240, r: 24 },
-  transform: { x: 432, y: 168, r: 18 },
-  pause: { x: 16, y: 14, r: 13 },
-  mute: { x: 464, y: 14, r: 13 },
-};
 function inBtn(p, b) { return Math.hypot(p.x - b.x, p.y - b.y) <= b.r + 6; }
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -69,9 +81,10 @@ canvas.addEventListener('touchstart', e => {
     else if (inBtn(p, BTN.transform) && transformAvailable()) { zone = 'transform'; Input.transformPressed = true; }
     else if (inBtn(p, BTN.pause)) { zone = 'pause'; Input.pausePressed = true; }
     else if (inBtn(p, BTN.mute)) { zone = 'mute'; AudioSys.toggleMute(); }
-    else if (p.x > VW * 0.45) { zone = 'jump'; } // right half fallback = jump (outside buttons)
+    else if (p.x > VW * 0.5) { zone = 'jump'; } // right half fallback = jump (outside buttons)
     touches[t.identifier] = { sx: p.x, sy: p.y, x: p.x, y: p.y, t: performance.now(), zone };
     Input.tapped = true;
+    lastPointer = p;
   }
 }, { passive: false });
 canvas.addEventListener('touchmove', e => {
@@ -89,7 +102,12 @@ function endTouch(e) {
 }
 canvas.addEventListener('touchend', endTouch, { passive: false });
 canvas.addEventListener('touchcancel', endTouch, { passive: false });
-canvas.addEventListener('mousedown', () => { AudioSys.init(); AudioSys.resume(); Input.tapped = true; });
+let lastPointer = null; // canvas-space coords of the most recent tap/click (for menu hit tests)
+canvas.addEventListener('mousedown', e => {
+  AudioSys.init(); AudioSys.resume();
+  Input.tapped = true;
+  lastPointer = canvasPos(e);
+});
 
 function pollInput() {
   // keyboard
@@ -123,6 +141,7 @@ function lateInput() {
   Input.tapped = false;
   Input.transformPressed = false;
   Input.pausePressed = false;
+  lastPointer = null;
 }
 
 // ---------------- save ----------------
@@ -396,7 +415,9 @@ function updateCamera(dt) {
     tx = Math.max(G.bossArena.l, Math.min(G.bossArena.r - VW, (G.bossArena.l + G.bossArena.r) / 2 - VW / 2));
   }
   tx = Math.max(0, Math.min(G.level.W * TILE - VW, tx));
-  ty = Math.max(0, Math.min(G.level.H * TILE - VH, ty));
+  const maxY = G.level.H * TILE - VH;
+  // level shorter than the view (portrait): anchor its floor to the screen bottom
+  ty = maxY <= 0 ? maxY : Math.max(0, Math.min(maxY, ty));
   G.camX += (tx - G.camX) * Math.min(1, 8 * dt);
   G.camY += (ty - G.camY) * Math.min(1, 6 * dt);
 }
@@ -411,15 +432,16 @@ function updateFlyZone(dt) {
   G.player.x += scroll * dt;
   G.checkpoint = { x: G.camX + 70, y: 135 };
 
-  // spawn waves
+  // spawn waves (wave y values are authored for a 270px field — scale to viewport)
   while (G.waveIdx < lvl.waves.length && lvl.waves[G.waveIdx].t <= G.flyT) {
     const w = lvl.waves[G.waveIdx++];
     const sx = G.camX + VW + 30;
-    if (w.type === 'asteroid') G.enemies.push(makeEnemy('asteroid', sx, w.y));
-    else if (w.type === 'soldier') { const e = makeEnemy('soldier', sx, w.y); e.homeY = w.y; G.enemies.push(e); }
-    else if (w.type === 'zline') { for (let i = 0; i < w.n; i++) G.pickups.push({ type: 'zeni', x: sx + i * 22, y: w.y, life: Infinity }); }
-    else if (w.type === 'senzu') G.pickups.push({ type: 'senzu', x: sx, y: w.y, life: Infinity });
-    else if (w.type === 'dragonball') { if (!G.save.balls.includes(w.id)) G.pickups.push({ type: 'dragonball', x: sx, y: w.y, id: w.id, life: Infinity }); }
+    const wy = Math.round(w.y * VH / 270);
+    if (w.type === 'asteroid') G.enemies.push(makeEnemy('asteroid', sx, wy));
+    else if (w.type === 'soldier') { const e = makeEnemy('soldier', sx, wy); e.homeY = wy; G.enemies.push(e); }
+    else if (w.type === 'zline') { for (let i = 0; i < w.n; i++) G.pickups.push({ type: 'zeni', x: sx + i * 22, y: wy, life: Infinity }); }
+    else if (w.type === 'senzu') G.pickups.push({ type: 'senzu', x: sx, y: wy, life: Infinity });
+    else if (w.type === 'dragonball') { if (!G.save.balls.includes(w.id)) G.pickups.push({ type: 'dragonball', x: sx, y: wy, id: w.id, life: Infinity }); }
   }
   // clean offscreen pickups
   for (const pk of G.pickups) if (pk.x < G.camX - 30) pk.dead = true;
@@ -431,7 +453,7 @@ function updateFlyZone(dt) {
     startDialogue(DIALOGUES.pre_ginyu, () => {
       G.boss = makeBoss('ginyu', G.camX, G.camX + VW, 200);
       G.boss.x = G.camX + VW + 40;
-      G.boss.y = 130;
+      G.boss.y = VH * 0.48;
     });
   }
   if (G.boss && !G.boss.dead) {
@@ -466,13 +488,14 @@ function drawTravel() {
   }
   // origin planet shrinking (left), destination growing (right)
   const shrink = Math.max(4, 30 - t * 6);
-  ctx.fillStyle = '#3a78e0'; ctx.beginPath(); ctx.arc(60, 200, shrink, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3a78e0'; ctx.beginPath(); ctx.arc(VW * 0.12, VH * 0.74, shrink, 0, 7); ctx.fill();
   const grow = Math.min(40, 4 + t * 7);
   ctx.fillStyle = G.zoneIdx >= 2 ? '#3fae49' : '#c8893a';
-  ctx.beginPath(); ctx.arc(430, 70, grow, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(VW * 0.9, VH * 0.26, grow, 0, 7); ctx.fill();
   // ship flying with bob + flame
-  const shipX = 90 + Math.min(1, t / 6) * 240;
-  const shipY = 150 - Math.min(1, t / 6) * 60 + Math.sin(t * 3) * 6;
+  const fr = Math.min(1, t / 6);
+  const shipX = VW * 0.19 + fr * VW * 0.5;
+  const shipY = VH * 0.55 - fr * VH * 0.22 + Math.sin(t * 3) * 6;
   ctx.save();
   ctx.translate(shipX, shipY);
   ctx.rotate(-0.25);
@@ -482,10 +505,10 @@ function drawTravel() {
   ctx.restore();
   // text
   const lines = TRAVEL_LINES[Math.min(2, G.zoneIdx)];
-  drawTextC(lines[0], VW / 2, 220, 10, '#ffd24a');
-  if (t > 2) drawTextC(lines[1], VW / 2, 238, 10, '#9ad1ff');
-  drawTextC(G.travelFrom + '  >>>  ' + G.travelTo, VW / 2, 30, 10, '#ffffff');
-  if (t > 1.5 && Math.floor(t * 2) % 2) drawTextC(Input.isTouch ? 'tap to skip' : 'press Z to skip', VW / 2, 258, 8, '#666a88');
+  drawTextC(lines[0], VW / 2, VH - 50, 10, '#ffd24a');
+  if (t > 2) drawTextC(lines[1], VW / 2, VH - 34, 10, '#9ad1ff');
+  drawTextC(G.travelFrom + ' >>> ' + G.travelTo, VW / 2, 30, VW < 300 ? 8 : 10, '#ffffff');
+  if (t > 1.5 && Math.floor(t * 2) % 2) drawTextC(Input.isTouch ? 'tap to skip' : 'press Z to skip', VW / 2, VH - 14, 8, '#666a88');
 }
 
 // ---------------- ending ----------------
@@ -529,22 +552,23 @@ function drawEnding() {
   drawBackground(ctx, 'namek', 0, 0, G.time);
   const allBalls = G.save.balls.length >= 7;
   // ground strip
-  ctx.fillStyle = THEMES.namek.fill; ctx.fillRect(0, 230, VW, 40);
-  ctx.fillStyle = THEMES.namek.top; ctx.fillRect(0, 230, VW, 5);
+  ctx.fillStyle = THEMES.namek.fill; ctx.fillRect(0, VH - 40, VW, 40);
+  ctx.fillStyle = THEMES.namek.top; ctx.fillRect(0, VH - 40, VW, 5);
   // goku
-  drawSprite(ctx, allBalls && G.endPhase >= 1 ? Sprites.ss_idle : Sprites.idle, 110, 230, false, 1.6);
+  drawSprite(ctx, allBalls && G.endPhase >= 1 ? Sprites.ss_idle : Sprites.idle, VW * 0.23, VH - 40, false, 1.6);
   if (allBalls) {
     // shenron rises
     const rise = Math.min(1, G.endT / 2.5);
-    const hx = 330, hy = 250 - rise * 190;
+    const hx = VW * 0.69, hy = VH - 20 - rise * VH * 0.7;
+    const bx = VW * 0.875;
     // body coils
     ctx.strokeStyle = '#49b855';
     ctx.lineWidth = 12;
     ctx.beginPath();
-    ctx.moveTo(420, 270);
+    ctx.moveTo(bx, VH);
     for (let i = 0; i <= 10; i++) {
       const tt = i / 10;
-      ctx.lineTo(420 - tt * (420 - hx) + Math.sin(tt * 6 + G.time * 2) * 18 * rise, 270 - tt * (270 - hy - 8));
+      ctx.lineTo(bx - tt * (bx - hx) + Math.sin(tt * 6 + G.time * 2) * 18 * rise, VH - tt * (VH - hy - 8));
     }
     ctx.stroke();
     ctx.lineWidth = 1;
@@ -555,18 +579,19 @@ function drawEnding() {
     // 7 balls circling at base
     for (let i = 0; i < 7; i++) {
       const a = G.time * 1.5 + i / 7 * Math.PI * 2;
-      drawSprite(ctx, Sprites.dragonball, 330 + Math.cos(a) * 40, 262 + Math.sin(a) * 8, false, 1);
+      drawSprite(ctx, Sprites.dragonball, hx + Math.cos(a) * 40, VH - 8 + Math.sin(a) * 8, false, 1);
     }
   }
   if (G.endPhase === 2) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, VW, VH);
-    drawTextC(allBalls ? 'TRUE ENDING' : 'THE END...?', VW / 2, 70, 22, '#ffd824');
-    drawTextC(`ZENI COLLECTED: ${G.zeni}`, VW / 2, 110, 10, '#ffffff');
-    drawTextC(`DRAGON BALLS: ${G.save.balls.length} / 7`, VW / 2, 128, 10, '#ffffff');
-    drawTextC(`TIME: ${Math.floor((G.playTime || 0) / 60)}:${String(Math.floor((G.playTime || 0) % 60)).padStart(2, '0')}`, VW / 2, 146, 10, '#ffffff');
-    drawTextC('Thanks for playing DRAGON DASH!', VW / 2, 180, 10, '#9ad1ff');
-    if (!allBalls) drawTextC('Use CHAPTER SELECT to find the missing Dragon Balls!', VW / 2, 198, 8, '#52d8c8');
-    if (Math.floor(G.endT * 2) % 2) drawTextC(Input.isTouch ? 'tap to continue' : 'press Z to continue', VW / 2, 234, 9, '#666a88');
+    const cy = Math.round(VH * 0.26);
+    drawTextC(allBalls ? 'TRUE ENDING' : 'THE END...?', VW / 2, cy, 22, '#ffd824');
+    drawTextC(`ZENI COLLECTED: ${G.zeni}`, VW / 2, cy + 40, 10, '#ffffff');
+    drawTextC(`DRAGON BALLS: ${G.save.balls.length} / 7`, VW / 2, cy + 58, 10, '#ffffff');
+    drawTextC(`TIME: ${Math.floor((G.playTime || 0) / 60)}:${String(Math.floor((G.playTime || 0) % 60)).padStart(2, '0')}`, VW / 2, cy + 76, 10, '#ffffff');
+    drawTextC('Thanks for playing DRAGON DASH!', VW / 2, cy + 110, 10, '#9ad1ff');
+    if (!allBalls) drawTextC('Use CHAPTER SELECT to find the missing Dragon Balls!', VW / 2, cy + 128, 8, '#52d8c8');
+    if (Math.floor(G.endT * 2) % 2) drawTextC(Input.isTouch ? 'tap to continue' : 'press Z to continue', VW / 2, VH - 36, 9, '#666a88');
   }
 }
 
@@ -581,6 +606,18 @@ function titleMenuItems() {
   }
   return items;
 }
+function menuRowY(i) { return Math.round(VH * 0.62) + i * 30; }
+function chapterRowY(i) { return Math.round(VH * 0.32) + i * 30; }
+
+function drawMenuButton(label, y, selected) {
+  const w = Math.min(VW - 40, 220);
+  ctx.fillStyle = selected ? 'rgba(255,216,36,0.92)' : 'rgba(10,10,28,0.78)';
+  ctx.fillRect(VW / 2 - w / 2, y - 13, w, 26);
+  ctx.strokeStyle = selected ? '#ffffff' : '#ffd824';
+  ctx.strokeRect(VW / 2 - w / 2 + 0.5, y - 12.5, w - 1, 25);
+  drawTextC(label, VW / 2, y, 11, selected ? '#16161f' : '#ffffff');
+}
+
 function updateTitle(dt) {
   G.titleT += dt;
   if (AudioSys.current !== 'title' && G.titleT > 0.2) AudioSys.playMusic('title');
@@ -588,17 +625,13 @@ function updateTitle(dt) {
   if (keys['arrowdown'] || keys['s']) { if (!G._menuHeld) { G.menuIdx = (G.menuIdx + 1) % items.length; AudioSys.sfx('select'); } G._menuHeld = true; }
   else if (keys['arrowup'] || keys['w']) { if (!G._menuHeld) { G.menuIdx = (G.menuIdx - 1 + items.length) % items.length; AudioSys.sfx('select'); } G._menuHeld = true; }
   else G._menuHeld = false;
-  // touch: tap on row selects
   if (Input.tapped) {
+    // tap/click on a button selects it; tapping anywhere else picks the highlighted one
     let chosen = G.menuIdx;
-    if (Input.isTouch) {
-      for (const id in touches) {
-        const tr = touches[id];
-        const row = Math.floor((tr.sy - 168) / 20);
-        if (row >= 0 && row < items.length) chosen = row;
-        else if (tr.sy < 168) { chosen = -1; }
+    if (lastPointer) {
+      for (let i = 0; i < items.length; i++) {
+        if (Math.abs(lastPointer.y - menuRowY(i)) <= 15) { chosen = i; break; }
       }
-      if (chosen === -1) return;
     }
     AudioSys.sfx('powerup');
     items[chosen].act();
@@ -608,31 +641,27 @@ function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
   // logo
-  drawTextC('DRAGON', VW / 2, 56, 40, '#ff8c1a', '#16161f');
-  drawTextC('DASH', VW / 2, 98, 40, '#ffd824', '#16161f');
-  drawTextC('~ a Dragon Ball Z adventure ~', VW / 2, 122, 10, '#9ad1ff');
+  const ly = Math.round(VH * 0.18);
+  drawTextC('DRAGON', VW / 2, ly, 40, '#ff8c1a', '#16161f');
+  drawTextC('DASH', VW / 2, ly + 42, 40, '#ffd824', '#16161f');
+  drawTextC('~ a Dragon Ball Z adventure ~', VW / 2, ly + 66, 10, '#9ad1ff');
   // goku running along the bottom
   const gx = ((G.titleT * 120) % (VW + 120)) - 60;
   const frame = ['run1', 'run2', 'run3', 'run2'][Math.floor(G.titleT * 10) % 4];
-  ctx.fillStyle = '#2c2c3a'; ctx.fillRect(0, 250, VW, 20);
-  drawSprite(ctx, Sprites[(G.save.beaten ? 'ss_' : '') + frame], gx, 250, false, 1.5);
+  ctx.fillStyle = '#2c2c3a'; ctx.fillRect(0, VH - 20, VW, 20);
+  drawSprite(ctx, Sprites[(G.save.beaten ? 'ss_' : '') + frame], gx, VH - 20, false, 1.5);
   for (let i = 0; i < 7; i++) {
     const a = G.titleT * 0.8 + i / 7 * Math.PI * 2;
-    drawSprite(ctx, Sprites.dragonball, VW / 2 + Math.cos(a) * 150, 88 + Math.sin(a) * 34, false, 1);
+    drawSprite(ctx, Sprites.dragonball, VW / 2 + Math.cos(a) * VW * 0.31, ly + 32 + Math.sin(a) * 34, false, 1);
   }
-  // menu
+  // menu buttons
   const items = titleMenuItems();
-  items.forEach((it, i) => {
-    const sel = i === G.menuIdx;
-    const y = 180 + i * 20;
-    if (sel && !Input.isTouch) drawTextC('>           <', VW / 2, y, 11, '#ffd824');
-    drawTextC(it.label, VW / 2, y, 11, sel ? '#ffffff' : '#a9adc4');
-  });
-  drawTextC(Input.isTouch ? 'tap a menu item to play' : 'arrows + Z to select  ·  X attack · C transform · M mute', VW / 2, 246, 8, '#666a88');
+  items.forEach((it, i) => drawMenuButton(it.label, menuRowY(i), i === G.menuIdx));
+  drawTextC(Input.isTouch ? 'tap to play!' : 'arrows + Z to select · X attack · C transform · M mute', VW / 2, VH - 30, 8, '#c9ccd8');
   if (G.save.balls.length > 0) {
     for (let i = 0; i < 7; i++) {
       ctx.globalAlpha = G.save.balls.includes(i + 1) ? 1 : 0.25;
-      drawSprite(ctx, Sprites.dragonball, 200 + i * 12, 142, false, 1);
+      drawSprite(ctx, Sprites.dragonball, VW / 2 - 40 + i * 12, ly + 86, false, 1);
     }
     ctx.globalAlpha = 1;
   }
@@ -643,13 +672,11 @@ function updateChapters(dt) {
   else if (keys['arrowup'] || keys['w']) { if (!G._menuHeld) { G.menuIdx = (G.menuIdx - 1 + n + 1) % (n + 1); AudioSys.sfx('select'); } G._menuHeld = true; }
   else G._menuHeld = false;
   if (Input.tapped) {
-    let chosen = G.menuIdx;
-    if (Input.isTouch) {
-      for (const id in touches) {
-        const row = Math.floor((touches[id].sy - 92) / 24);
-        if (row >= 0 && row <= n) chosen = row; else return;
-      }
-    }
+    let chosen = -1;
+    if (lastPointer) {
+      for (let i = 0; i <= n; i++) if (Math.abs(lastPointer.y - chapterRowY(i)) <= 15) { chosen = i; break; }
+      if (chosen === -1) return; // tapped empty space: ignore (avoid accidental zone start)
+    } else chosen = G.menuIdx;
     AudioSys.sfx('powerup');
     if (chosen >= n) { G.state = 'title'; G.menuIdx = 0; }
     else { G.zeni = G.save.zeni || 0; startZone(chosen, false); }
@@ -657,15 +684,14 @@ function updateChapters(dt) {
 }
 function drawChapters() {
   drawBackground(ctx, 'space', G.titleT * 10, 0, G.titleT);
-  drawTextC('CHAPTER SELECT', VW / 2, 50, 20, '#ffd824');
+  drawTextC('CHAPTER SELECT', VW / 2, Math.round(VH * 0.16), 20, '#ffd824');
   const names = ['1. WEST CITY', '2. ROCKY WASTELAND', '3. DEEP SPACE', '4. PLANET NAMEK'];
   const n = Math.min(G.save.maxZone, 3) + 1;
   for (let i = 0; i <= n; i++) {
     const label = i < n ? names[i] : 'BACK';
-    const sel = i === G.menuIdx && !Input.isTouch;
-    drawTextC((sel ? '> ' : '') + label + (sel ? ' <' : ''), VW / 2, 100 + i * 24, 12, i === G.menuIdx ? '#ffffff' : '#a9adc4');
+    drawMenuButton(label, chapterRowY(i), i === G.menuIdx);
   }
-  drawTextC('Dragon Balls you already found stay collected!', VW / 2, 230, 8, '#52d8c8');
+  drawTextC('Dragon Balls you already found stay collected!', VW / 2, VH - 18, 8, '#52d8c8');
 }
 
 // ---------------- text helper (canvas font) ----------------
@@ -928,49 +954,61 @@ function drawHUD() {
   const kr = p.ki / p.kiMax;
   ctx.fillStyle = kr >= 0.99 ? (Math.floor(G.time * 6) % 2 ? '#ffffff' : '#52d8f0') : '#52d8f0';
   ctx.fillRect(49, 23, 60 * kr, 5);
-  if (kr >= 0.99 && !p.ss) drawTextL('KAMEHAMEHA READY! (hold attack)', 114, 26, 7, '#c8f4ff');
-  if (p.ss && !p.ssPermanent) drawTextL('SS ' + Math.ceil(p.ssT) + 's', 114, 12, 9, '#ffe23a');
-  if (p.ss && p.ssPermanent) drawTextL('SUPER SAIYAN', 114, 12, 9, '#ffe23a');
+  if (kr >= 0.99 && !p.ss) drawTextL('KAMEHAMEHA READY! (hold attack)', 34, 38, 7, '#c8f4ff');
+  if (p.ss && !p.ssPermanent) drawTextL('SS ' + Math.ceil(p.ssT) + 's', 34, 38, 9, '#ffe23a');
+  if (p.ss && p.ssPermanent) drawTextL('SUPER SAIYAN', 34, 38, 9, '#ffe23a');
   // dragon balls
   for (let i = 0; i < 7; i++) {
     const has = G.save.balls.includes(i + 1);
     ctx.globalAlpha = has ? 1 : 0.22;
-    ctx.drawImage(Sprites.dragonball, 380 + i * 10, 28);
+    ctx.drawImage(Sprites.dragonball, VW - 100 + i * 10, 28);
     ctx.globalAlpha = 1;
   }
-  // boss hp
+  // boss hp (top center, clear of touch buttons)
   if (G.boss && !G.boss.dead) {
     const b = G.boss;
-    drawTextC(b.name, VW / 2, 244, 9, '#ff8080');
-    ctx.fillStyle = '#22242e'; ctx.fillRect(VW / 2 - 80, 250, 160, 8);
+    drawTextC(b.name, VW / 2, 50, 9, '#ff8080');
+    ctx.fillStyle = '#22242e'; ctx.fillRect(VW / 2 - 80, 56, 160, 8);
     ctx.fillStyle = b.kind === 'frieza' && b.phase === 1 ? '#e060ff' : '#e03131';
-    ctx.fillRect(VW / 2 - 79, 251, 158 * (b.hp / b.hpMax), 6);
+    ctx.fillRect(VW / 2 - 79, 57, 158 * (b.hp / b.hpMax), 6);
   }
-  // toast
+  // toast (wraps on narrow screens)
   if (G.toastT > 0) {
+    ctx.font = 'bold 9px monospace';
+    const words = G.toastMsg.split(' ');
+    const maxW = VW - 24;
+    const lines = [''];
+    for (const w of words) {
+      const test = lines[lines.length - 1] ? lines[lines.length - 1] + ' ' + w : w;
+      if (ctx.measureText(test).width > maxW) lines.push(w);
+      else lines[lines.length - 1] = test;
+    }
+    const bw = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + 20;
+    const bh = lines.length * 12 + 8;
+    const ty0 = G.boss && !G.boss.dead ? 70 : 50; // sit below the boss bar when present
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    const tw = G.toastMsg.length * 6 + 20;
-    ctx.fillRect(VW / 2 - tw / 2, 50, tw, 18);
-    drawTextC(G.toastMsg, VW / 2, 59, 9, '#ffd824');
+    ctx.fillRect(VW / 2 - bw / 2, ty0, bw, bh);
+    lines.forEach((l, i) => drawTextC(l, VW / 2, ty0 + 10 + i * 12, 9, '#ffd824'));
   }
   // zone banner
   if (G.bannerT > 0) {
     const a = Math.min(1, G.bannerT > 2 ? (2.6 - G.bannerT) * 2.5 : G.bannerT);
     ctx.globalAlpha = Math.max(0, Math.min(1, a));
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 100, VW, 56);
-    drawTextC('ZONE ' + (G.zoneIdx + 1), VW / 2, 118, 12, '#9ad1ff');
-    drawTextC(G.level.name, VW / 2, 138, 20, '#ffd824');
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, VH / 2 - 35, VW, 56);
+    drawTextC('ZONE ' + (G.zoneIdx + 1), VW / 2, VH / 2 - 17, 12, '#9ad1ff');
+    drawTextC(G.level.name, VW / 2, VH / 2 + 3, 20, '#ffd824');
     ctx.globalAlpha = 1;
   }
   // touch controls
   if (Input.isTouch && (G.state === 'play' || G.state === 'boss') && !G.dialogue) {
     ctx.globalAlpha = 0.3;
     // stick hint
+    const stY = VH - 48;
     ctx.strokeStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(60, 222, 28, 0, 7); ctx.stroke();
-    drawTextC('<', 40, 222, 14, '#ffffff');
-    drawTextC('>', 80, 222, 14, '#ffffff');
-    if (G.level.mode === 'fly') { drawTextC('^', 60, 204, 12, '#ffffff'); drawTextC('v', 60, 240, 12, '#ffffff'); }
+    ctx.beginPath(); ctx.arc(60, stY, 28, 0, 7); ctx.stroke();
+    drawTextC('<', 40, stY, 14, '#ffffff');
+    drawTextC('>', 80, stY, 14, '#ffffff');
+    if (G.level.mode === 'fly') { drawTextC('^', 60, stY - 18, 12, '#ffffff'); drawTextC('v', 60, stY + 18, 12, '#ffffff'); }
     // buttons
     ctx.fillStyle = '#2a4fd6'; ctx.beginPath(); ctx.arc(BTN.jump.x, BTN.jump.y, BTN.jump.r, 0, 7); ctx.fill();
     ctx.fillStyle = '#e07820'; ctx.beginPath(); ctx.arc(BTN.attack.x, BTN.attack.y, BTN.attack.r, 0, 7); ctx.fill();
@@ -998,28 +1036,38 @@ function drawDialogue() {
   const d = G.dialogue;
   if (!d) return;
   const line = d.lines[d.idx];
+  // measure full text to size the box (stable while typing)
+  ctx.font = 'bold 10px monospace';
+  const maxW = VW - 130;
+  let nLines = 1, lw = 0;
+  for (const word of line.text.split(' ')) {
+    const w = ctx.measureText(word + ' ').width;
+    if (lw + w > maxW) { nLines++; lw = 0; }
+    lw += w;
+  }
+  const boxH = Math.max(74, nLines * 13 + 28);
+  const top = VH - 12 - boxH;
   ctx.fillStyle = 'rgba(8,8,20,0.88)';
-  ctx.fillRect(16, 184, VW - 32, 74);
+  ctx.fillRect(16, top, VW - 32, boxH);
   ctx.strokeStyle = '#ffd824';
-  ctx.strokeRect(16.5, 184.5, VW - 33, 73);
+  ctx.strokeRect(16.5, top + 0.5, VW - 33, boxH - 1);
   // portrait
   const img = PORTRAITS[line.who]();
   ctx.fillStyle = '#22242e';
-  ctx.fillRect(24, 192, 52, 58);
+  ctx.fillRect(24, top + 8, 52, 58);
   const sc = Math.min(48 / img.width, 52 / img.height);
   ctx.save();
-  ctx.translate(50, 248);
+  ctx.translate(50, top + 64);
   ctx.scale(sc, sc);
   ctx.drawImage(img, -img.width / 2, -img.height);
   ctx.restore();
-  drawTextC(NAMES[line.who], 50, 198, 8, '#ffd824');
+  drawTextC(NAMES[line.who], 50, top + 14, 8, '#ffd824');
   // text with wrapping
   const shown = line.text.slice(0, Math.floor(d.chars));
   ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
-  const maxW = VW - 130;
-  let lx = 88, ly = 202;
+  let lx = 88, ly = top + 18;
   for (const word of shown.split(' ')) {
     const w = ctx.measureText(word + ' ').width;
     if (lx + w > 88 + maxW) { lx = 88; ly += 13; }
@@ -1027,7 +1075,7 @@ function drawDialogue() {
     lx += w;
   }
   if (d.chars >= line.text.length && Math.floor(G.time * 3) % 2) {
-    drawTextC(Input.isTouch ? 'tap' : 'Z', VW - 36, 248, 8, '#ffd824');
+    drawTextC(Input.isTouch ? 'tap' : 'Z', VW - 36, top + boxH - 10, 8, '#ffd824');
   }
 }
 
@@ -1064,8 +1112,8 @@ function tick(dt) {
       drawDialogue();
       if (G.paused) {
         ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, VW, VH);
-        drawTextC('PAUSED', VW / 2, 120, 22, '#ffd824');
-        drawTextC(Input.isTouch ? 'tap to resume' : 'press P to resume', VW / 2, 150, 10, '#ffffff');
+        drawTextC('PAUSED', VW / 2, VH / 2 - 15, 22, '#ffd824');
+        drawTextC(Input.isTouch ? 'tap to resume' : 'press P to resume', VW / 2, VH / 2 + 15, 10, '#ffffff');
       }
       break;
     case 'travel':

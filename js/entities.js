@@ -279,8 +279,8 @@ function updatePlayerFly(dt) {
   if (inp.down) my = 1;
   p.x += mx * spd * dt;
   p.fy += my * spd * dt;
-  p.x = Math.max(G.camX + 14, Math.min(G.camX + 360, p.x));
-  p.fy = Math.max(16, Math.min(254, p.fy));
+  p.x = Math.max(G.camX + 14, Math.min(G.camX + VW * 0.75, p.x));
+  p.fy = Math.max(16, Math.min(VH - 16, p.fy));
   p.y = p.fy + 6; // keep y roughly synced for shared code
   p.facing = 1;
 
@@ -537,7 +537,7 @@ function updateEnemies(dt) {
 }
 
 function onScreen(e) {
-  return e.x > G.camX - 24 && e.x < G.camX + 504 && e.y > G.camY - 24 && e.y < G.camY + 294;
+  return e.x > G.camX - 24 && e.x < G.camX + VW + 24 && e.y > G.camY - 24 && e.y < G.camY + VH + 24;
 }
 
 function damageEnemy(e, dmg) {
