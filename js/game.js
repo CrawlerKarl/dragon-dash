@@ -169,7 +169,7 @@ const G = {
   zoneIdx: 0,
   level: null,
   player: null,
-  enemies: [], projectiles: [], pickups: [], particles: [],
+  enemies: [], projectiles: [], pickups: [], particles: [], trail: [],
   springs: [], checkpoints: [], npcs: [],
   boss: null, bossTrigger: null,
   camX: 0, camY: 0,
@@ -277,8 +277,8 @@ function startZone(idx, fresh) {
   G.save.maxZone = Math.max(G.save.maxZone || 0, idx);
   const def = ZONES[idx]();
   G.level = def;
-  G.enemies = []; G.projectiles = []; G.pickups = []; G.particles = [];
-  G.boss = null; G.kame = null;
+  G.enemies = []; G.projectiles = []; G.pickups = []; G.particles = []; G.trail = [];
+  G.boss = null; G.kame = null; G.dialogue = null;
   G.state = 'play';
   G.bannerT = 2.6;
   G.paused = false;
@@ -640,7 +640,7 @@ function updateTitle(dt) {
     items[chosen].act();
   }
 }
-const GAME_VERSION = 'v4';
+const GAME_VERSION = 'v5';
 function drawTitle() {
   drawBackground(ctx, 'city', G.titleT * 30, 0, G.titleT);
   ctx.fillStyle = 'rgba(0,0,30,0.35)'; ctx.fillRect(0, 0, VW, VH);
@@ -767,10 +767,33 @@ function softShadow(x, y, w) {
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.beginPath(); ctx.ellipse(x, y + 1.5, w, w * 0.28, 0, 0, 7); ctx.fill();
 }
+// cached cinematic vignette
+let _vig = { w: 0, h: 0, g: null };
+function drawVignette() {
+  if (_vig.w !== VW || _vig.h !== VH) {
+    const g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.45, VW / 2, VH / 2, Math.max(VW, VH) * 0.74);
+    g.addColorStop(0, 'rgba(0,0,20,0)');
+    g.addColorStop(1, 'rgba(0,0,20,0.3)');
+    _vig = { w: VW, h: VH, g };
+  }
+  ctx.fillStyle = _vig.g;
+  ctx.fillRect(0, 0, VW, VH);
+}
+// gentle drifting motes per theme — stateless, derived from time
+function drawAmbient(theme, camX) {
+  const colors = { city: 'rgba(255,255,255,0.35)', wasteland: 'rgba(255,200,120,0.4)', space: 'rgba(160,200,255,0.5)', namek: 'rgba(180,255,210,0.45)' };
+  ctx.fillStyle = colors[theme] || colors.city;
+  for (let i = 0; i < 14; i++) {
+    const sp = 8 + (i % 4) * 5;
+    const mx = ((hashXY(i, 21) % VW) - (G.time * sp + camX * 0.6) % VW + VW * 9) % VW;
+    const my = ((hashXY(i, 33) % VH) + Math.sin(G.time * 0.8 + i) * 14 + VH * 9) % VH;
+    ctx.beginPath(); ctx.arc(mx, my, 0.8 + (i % 3) * 0.5, 0, 7); ctx.fill();
+  }
+}
 
 // ---------------- text helper (canvas font) ----------------
 function drawTextC(str, x, y, size, color, outline) {
-  ctx.font = `bold ${size}px monospace`;
+  ctx.font = `bold ${size}px 'Trebuchet MS','Segoe UI',Verdana,sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   if (outline) {
@@ -782,7 +805,7 @@ function drawTextC(str, x, y, size, color, outline) {
   ctx.fillText(str, x, y);
 }
 function drawTextL(str, x, y, size, color) {
-  ctx.font = `bold ${size}px monospace`;
+  ctx.font = `bold ${size}px 'Trebuchet MS','Segoe UI',Verdana,sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = color;
@@ -797,6 +820,7 @@ function drawWorld() {
   if (G.shake > 0) ctx.translate((Math.random() - 0.5) * G.shake * 9, (Math.random() - 0.5) * G.shake * 9);
 
   drawBackground(ctx, G.level.theme, camX, camY, G.time);
+  drawAmbient(G.level.theme, camX);
   if (!isFly) drawTiles(ctx, G.level, camX, camY, G.time);
 
   // springs
@@ -817,7 +841,7 @@ function drawWorld() {
   }
   // npcs
   for (const n of G.npcs || []) {
-    drawSprite(ctx, Sprites.bulma, n.x - camX, n.y - camY, G.player.x < n.x, 1.4);
+    drawSprite(ctx, Sprites.bulma, n.x - camX, n.y - camY, G.player.x < n.x, 1.8);
     if (!G.save.radar) {
       const bob = Math.sin(G.time * 4) * 2;
       drawTextC('!', n.x - camX, n.y - camY - 34 + bob, 12, '#ffd824', '#16161f');
@@ -831,19 +855,22 @@ function drawWorld() {
     if (pk.type === 'zeni') {
       const ph = Math.floor(G.time * 8 + pk.x * 0.1) % 4;
       const w = [6, 4, 2, 4][ph];
+      // soft gold glow
+      ctx.fillStyle = 'rgba(255,216,36,0.18)';
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
       ctx.save();
       ctx.translate(x, y);
-      ctx.scale(w / 6, 1);
+      ctx.scale(w / 6 * 2, 2);
       ctx.drawImage(Sprites.zeni, -3, -3);
       ctx.restore();
     } else if (pk.type === 'dragonball') {
       const bob = Math.sin(G.time * 3 + pk.id) * 3;
       ctx.fillStyle = `rgba(255,216,36,${0.25 + Math.sin(G.time * 5) * 0.1})`;
-      ctx.beginPath(); ctx.arc(x, y + bob - 3, 10, 0, 7); ctx.fill();
-      drawSprite(ctx, Sprites.dragonball, x, y + bob + 3, false, 1.4);
+      ctx.beginPath(); ctx.arc(x, y + bob - 4, 14, 0, 7); ctx.fill();
+      drawSprite(ctx, Sprites.dragonball, x, y + bob + 4, false, 2);
     } else if (pk.type === 'senzu') {
       const bob = Math.sin(G.time * 3) * 2;
-      drawSprite(ctx, Sprites.senzu, x, y + bob, false, 1.6);
+      drawSprite(ctx, Sprites.senzu, x, y + bob, false, 2.4);
     }
   }
   // enemies
@@ -856,17 +883,17 @@ function drawWorld() {
     const flip = G.player.x < e.x;
     if (G.level.mode !== 'fly' && e.kind !== 'asteroid') softShadow(x, y, e.w * 0.55);
     switch (e.kind) {
-      case 'rrbot': drawSprite(ctx, f2 ? Sprites.rrbot1 : Sprites.rrbot2, x, y, e.dir > 0, 1.2); break;
+      case 'rrbot': drawSprite(ctx, f2 ? Sprites.rrbot1 : Sprites.rrbot2, x, y, e.dir > 0, 1.6); break;
       case 'drone': {
         const img = f2 ? Sprites.drone1 : Sprites.drone2;
         ctx.save();
         if (e.frieza) ctx.filter = 'hue-rotate(90deg)';
-        drawSprite(ctx, img, x, y, flip, 1.2);
+        drawSprite(ctx, img, x, y, flip, 1.6);
         ctx.restore();
         break;
       }
-      case 'saiba': drawSprite(ctx, e.vy !== 0 ? Sprites.saiba2 : (f2 ? Sprites.saiba1 : Sprites.saiba2), x, y, flip, 1.2); break;
-      case 'soldier': case 'soldier_g': drawSprite(ctx, f2 ? Sprites.soldier1 : Sprites.soldier2, x, y, e.kind === 'soldier' ? false : flip, 1.2); break;
+      case 'saiba': drawSprite(ctx, e.vy !== 0 ? Sprites.saiba2 : (f2 ? Sprites.saiba1 : Sprites.saiba2), x, y, flip, 1.6); break;
+      case 'soldier': case 'soldier_g': drawSprite(ctx, f2 ? Sprites.soldier1 : Sprites.soldier2, x, y, e.kind === 'soldier' ? false : flip, 1.6); break;
       case 'asteroid': {
         ctx.save();
         ctx.translate(x, y - 10);
@@ -895,11 +922,13 @@ function drawWorld() {
   for (const pr of G.projectiles) {
     const x = pr.x - camX, y = pr.y - camY;
     if (pr.kind === 'ki') {
-      ctx.fillStyle = '#9ad1ff'; ctx.beginPath(); ctx.arc(x, y, pr.r + 1.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x, y, pr.r - 1, 0, 7); ctx.fill();
+      const g1 = ctx.createRadialGradient(x, y, 1, x, y, pr.r + 6);
+      g1.addColorStop(0, '#ffffff'); g1.addColorStop(0.45, 'rgba(140,210,255,0.9)'); g1.addColorStop(1, 'rgba(140,210,255,0)');
+      ctx.fillStyle = g1; ctx.beginPath(); ctx.arc(x, y, pr.r + 6, 0, 7); ctx.fill();
     } else if (pr.kind === 'shot') {
-      ctx.fillStyle = '#ff8050'; ctx.beginPath(); ctx.arc(x, y, pr.r + 1, 0, 7); ctx.fill();
-      ctx.fillStyle = '#fff0a0'; ctx.beginPath(); ctx.arc(x, y, pr.r - 1, 0, 7); ctx.fill();
+      const g2 = ctx.createRadialGradient(x, y, 1, x, y, pr.r + 5);
+      g2.addColorStop(0, '#fff4c0'); g2.addColorStop(0.5, 'rgba(255,128,80,0.95)'); g2.addColorStop(1, 'rgba(255,128,80,0)');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(x, y, pr.r + 5, 0, 7); ctx.fill();
     } else if (pr.kind === 'orb') {
       ctx.fillStyle = 'rgba(160,90,216,0.5)'; ctx.beginPath(); ctx.arc(x, y, pr.r + 3 + Math.sin(G.time * 10) * 2, 0, 7); ctx.fill();
       ctx.fillStyle = '#e060ff'; ctx.beginPath(); ctx.arc(x, y, pr.r, 0, 7); ctx.fill();
@@ -917,8 +946,15 @@ function drawWorld() {
   // particles
   for (const pt of G.particles) {
     ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
-    ctx.fillStyle = pt.color;
-    ctx.fillRect(pt.x - camX - pt.size / 2, pt.y - camY - pt.size / 2, pt.size, pt.size);
+    if (pt.ring) {
+      ctx.strokeStyle = pt.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(pt.x - camX, pt.y - camY, (1 - pt.life / pt.maxLife) * pt.size + 4, 0, 7); ctx.stroke();
+      ctx.lineWidth = 1;
+    } else {
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(pt.x - camX - pt.size / 2, pt.y - camY - pt.size / 2, pt.size, pt.size);
+    }
   }
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -926,6 +962,12 @@ function drawWorld() {
 
 function drawPlayer(camX, camY) {
   const p = G.player;
+  // afterimage trail (very DBZ)
+  for (const tr of G.trail) {
+    ctx.globalAlpha = (tr.t / 0.22) * 0.28;
+    drawSprite(ctx, Sprites[(tr.ss ? 'ss_' : '') + 'run2'], tr.x - camX, tr.y - camY, tr.flip, 1.8);
+  }
+  ctx.globalAlpha = 1;
   if (p.invulnT > 0 && p.deadT <= 0 && Math.floor(p.invulnT * 24) % 2 === 0) return;
   const ss = p.ss ? 'ss_' : '';
   let img;
@@ -941,13 +983,13 @@ function drawPlayer(camX, camY) {
   if (p.ss) {
     ctx.fillStyle = `rgba(255,226,58,${0.18 + Math.sin(G.time * 14) * 0.07})`;
     ctx.beginPath();
-    ctx.ellipse(px, py - 14, 16, 22 + Math.sin(G.time * 10) * 3, 0, 0, 7);
+    ctx.ellipse(px, py - 18, 20, 28 + Math.sin(G.time * 10) * 4, 0, 0, 7);
     ctx.fill();
   }
   if (p.flyMode) {
     img = Sprites[ss + (Math.floor(p.anim * 2) % 2 ? 'fly1' : 'fly2')];
     if (p.kameT > 0) img = Sprites[ss + 'fly1'];
-    drawSprite(ctx, img, px, py, false, 1.3);
+    drawSprite(ctx, img, px, py, false, 1.6);
     // engine trail
     if (Math.random() < 0.6) G.particles.push({ x: p.x - 16, y: p.fy + 4, vx: -80, vy: (Math.random() - 0.5) * 20, life: 0.3, maxLife: 0.3, color: p.ss ? '#ffe23a' : '#9ad1ff', size: 2 });
   } else {
@@ -960,7 +1002,7 @@ function drawPlayer(camX, camY) {
     else if (!p.onGround) img = Sprites[ss + 'jump'];
     else if (Math.abs(p.vx) > 15) img = Sprites[ss + ['run1', 'run2', 'run3', 'run2'][Math.floor(p.anim * 9) % 4]];
     else img = Sprites[ss + 'idle'];
-    drawSprite(ctx, img, px, py, p.facing < 0, 1.4);
+    drawSprite(ctx, img, px, py, p.facing < 0, 1.8);
     // speed lines when boosting
     if (Math.abs(p.vx) > 260) {
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
@@ -972,16 +1014,16 @@ function drawPlayer(camX, camY) {
   }
   // charge orb + the chant
   if (p.charging) {
-    const cy = p.flyMode ? p.fy - camY : py - 15;
-    const cx = px + p.facing * 13;
+    const cy = p.flyMode ? p.fy - camY : py - 19;
+    const cx = px + p.facing * 17;
     const r = 3 + Math.min(5, p.chargeT * 3) + Math.sin(G.time * 20) * 1.5;
     ctx.fillStyle = 'rgba(82,216,240,0.5)'; ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, 7); ctx.fill();
     ctx.fillStyle = '#c8f4ff'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
     const chant = p.chargeT < 0.7 ? 'KA...' : p.chargeT < 0.95 ? 'KA-ME...' : p.chargeT < 1.2 ? 'KA-ME-HA...' : 'KA-ME-HA-ME...';
-    drawTextC(chant, px, py - 44 + Math.sin(G.time * 12), 10, '#c8f4ff', '#16161f');
+    drawTextC(chant, px, py - 52 + Math.sin(G.time * 12), 11, '#c8f4ff', '#16161f');
   }
   if (p.kameT > 0) {
-    drawTextC('HAAAAA!!!', px, py - 46 + Math.sin(G.time * 25) * 2, 14, '#ffffff', '#1a4fa0');
+    drawTextC('HAAAAA!!!', px, py - 54 + Math.sin(G.time * 25) * 2, 15, '#ffffff', '#1a4fa0');
   }
   // radar arrow
   if (G.save.radar && (G.state === 'play') && !G.dialogue) {
@@ -993,12 +1035,12 @@ function drawPlayer(camX, camY) {
     }
     if (nearest && nd > 60) {
       const a = Math.atan2(nearest.y - (p.flyMode ? p.fy : p.y - 20), nearest.x - p.x);
-      const ax = px, ay = py - 38 + Math.sin(G.time * 6) * 2;
+      const ax = px, ay = py - 48 + Math.sin(G.time * 6) * 2;
       ctx.save();
       ctx.translate(ax, ay);
       ctx.rotate(a);
       ctx.fillStyle = 'rgba(82,216,240,0.9)';
-      ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-4, -5); ctx.lineTo(-4, 5); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, -6); ctx.lineTo(-5, 6); ctx.fill();
       ctx.restore();
     }
   }
@@ -1013,12 +1055,20 @@ function drawKameBeam(camX, camY) {
   const wob = Math.sin(G.time * 30) * 2;
   const w = 16 + wob + Math.min(8, G.kame.t * 14);
   const sx = dir > 0 ? x0 : x0 - len;
-  ctx.fillStyle = 'rgba(82,160,255,0.55)';
-  ctx.fillRect(sx, y - w / 2 - 3, len, w + 6);
-  ctx.fillStyle = '#8ecbff';
-  ctx.fillRect(sx, y - w / 2, len, w);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(sx, y - w / 4, len, w / 2);
+  const bg = ctx.createLinearGradient(0, y - w, 0, y + w);
+  bg.addColorStop(0, 'rgba(82,160,255,0)');
+  bg.addColorStop(0.2, 'rgba(110,180,255,0.75)');
+  bg.addColorStop(0.5, '#ffffff');
+  bg.addColorStop(0.8, 'rgba(110,180,255,0.75)');
+  bg.addColorStop(1, 'rgba(82,160,255,0)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(sx, y - w, len, w * 2);
+  // crackling energy along the beam
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 6; i++) {
+    const ex = sx + ((G.time * 600 + i * len / 6) % len);
+    ctx.beginPath(); ctx.arc(ex, y + Math.sin(G.time * 30 + i * 2) * w * 0.3, 2.2, 0, 7); ctx.fill();
+  }
   // muzzle flare
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.arc(x0, y, w * 0.7, 0, 7); ctx.fill();
@@ -1071,7 +1121,7 @@ function drawHUD() {
   }
   // toast (wraps on narrow screens)
   if (G.toastT > 0) {
-    ctx.font = 'bold 9px monospace';
+    ctx.font = "bold 9px 'Trebuchet MS','Segoe UI',Verdana,sans-serif";
     const words = G.toastMsg.split(' ');
     const maxW = VW - 24;
     const lines = [''];
@@ -1138,7 +1188,7 @@ function drawDialogue() {
   if (!d) return;
   const line = d.lines[d.idx];
   // measure full text to size the box (stable while typing)
-  ctx.font = 'bold 10px monospace';
+  ctx.font = "bold 10px 'Trebuchet MS','Segoe UI',Verdana,sans-serif";
   const maxW = VW - 130;
   let nLines = 1, lw = 0;
   for (const word of line.text.split(' ')) {
@@ -1162,7 +1212,7 @@ function drawDialogue() {
   drawTextC(NAMES[line.who], 50, top + 14, 8, '#ffd824');
   // text with wrapping
   const shown = line.text.slice(0, Math.floor(d.chars));
-  ctx.font = 'bold 10px monospace';
+  ctx.font = "bold 10px 'Trebuchet MS','Segoe UI',Verdana,sans-serif";
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
   let lx = 88, ly = top + 18;
@@ -1225,6 +1275,8 @@ function tick(dt) {
       break;
   }
 
+  drawVignette();
+
   // white flash (transform / phase change)
   if (G.flashT > 0) {
     ctx.fillStyle = `rgba(255,255,240,${Math.min(0.85, G.flashT * 1.8)})`;
@@ -1248,7 +1300,7 @@ function safeTick(dt) {
   if (crashMsg) {
     ctx.fillStyle = 'rgba(180,20,20,0.92)';
     ctx.fillRect(0, 0, VW, 30);
-    ctx.font = 'bold 8px monospace';
+    ctx.font = "bold 8px 'Trebuchet MS','Segoe UI',Verdana,sans-serif";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
     ctx.fillText('ERROR: ' + crashMsg, VW / 2, 10);

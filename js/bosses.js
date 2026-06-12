@@ -3,10 +3,10 @@
 // ============================================================
 
 const BOSS_DEFS = {
-  mech:   { hp: 30, name: 'RED RIBBON MECH' },
-  vegeta: { hp: 45, name: 'VEGETA' },
-  ginyu:  { hp: 40, name: 'CAPTAIN GINYU' },
-  frieza: { hp: 72, name: 'FRIEZA' },
+  mech:   { hp: 22, name: 'RED RIBBON MECH' },
+  vegeta: { hp: 30, name: 'VEGETA' },
+  ginyu:  { hp: 28, name: 'CAPTAIN GINYU' },
+  frieza: { hp: 50, name: 'FRIEZA' },
 };
 
 function makeBoss(kind, arenaL, arenaR, groundY) {
@@ -26,8 +26,8 @@ function makeBoss(kind, arenaL, arenaR, groundY) {
 function bossHitTest(x, y, r) {
   const b = G.boss;
   if (!b || b.dead) return false;
-  const hw = b.kind === 'mech' ? 14 : 9;
-  const hh = b.kind === 'mech' ? 20 : 11;
+  const hw = b.kind === 'mech' ? 18 : 12;
+  const hh = b.kind === 'mech' ? 26 : 15;
   return Math.abs(x - b.x) < hw + r && Math.abs(y - (b.y - hh)) < hh + r;
 }
 
@@ -37,6 +37,11 @@ function damageBoss(dmg) {
   b.hp -= dmg;
   b.hurtT = 0.18;
   AudioSys.sfx('bossHit');
+  if (!b.senzuDropped && b.hp <= b.hpMax * 0.55 && b.hp > 0) {
+    b.senzuDropped = true;
+    G.pickups.push({ type: 'senzu', x: (b.arenaL + b.arenaR) / 2, y: G.player.flyMode ? 140 : b.groundY - 14, life: Infinity });
+    G.toast('A Senzu Bean appeared!', 2);
+  }
   if (b.hp <= 0) {
     b.hp = 0;
     b.dead = true;
@@ -117,10 +122,10 @@ function updateMech(b, p, dt) {
       if (b.stateT <= 0) {
         const d = b.flipped ? -1 : 1;
         for (const sp of [-0.25, 0, 0.25]) {
-          G.projectiles.push({ kind: 'shot', x: b.x + d * 14, y: b.y - 22, vx: d * 160 * Math.cos(sp), vy: 160 * Math.sin(sp), r: 3.5, life: 3, friendly: false });
+          G.projectiles.push({ kind: 'shot', x: b.x + d * 14, y: b.y - 22, vx: d * 135 * Math.cos(sp), vy: 135 * Math.sin(sp), r: 3.5, life: 3, friendly: false });
         }
         AudioSys.sfx('blast');
-        b.state = 'walk'; b.stateT = 1.6 + Math.random();
+        b.state = 'walk'; b.stateT = 2.0 + Math.random();
       }
       break;
     case 'stomp':
@@ -137,7 +142,7 @@ function updateMech(b, p, dt) {
         AudioSys.sfx('explode');
         // shockwaves both directions along the ground
         for (const d of [-1, 1]) {
-          G.projectiles.push({ kind: 'wave', x: b.x + d * 18, y: b.y - 5, vx: d * 200, vy: 0, r: 5, life: 1.4, friendly: false });
+          G.projectiles.push({ kind: 'wave', x: b.x + d * 18, y: b.y - 5, vx: d * 165, vy: 0, r: 5, life: 1.4, friendly: false });
         }
         // player takes hit if grounded & close when it lands
         if (p.onGround && Math.abs(p.x - b.x) < 46 && p.invulnT <= 0) hurtPlayer();
@@ -160,25 +165,25 @@ function updateVegeta(b, p, py, dt) {
       b.x += (Math.max(b.arenaL + 20, Math.min(b.arenaR - 20, want)) - b.x) * 1.2 * dt;
       if (b.stateT <= 0) {
         const r = Math.random();
-        if (r < 0.4) { b.state = 'volley'; b.stateT = 1.3; b.volleyN = 4; }
-        else if (r < 0.75) { b.state = 'dashTele'; b.stateT = 0.55; b.telegraphT = 0.55; }
-        else { b.state = 'galickTele'; b.stateT = 0.9; b.telegraphT = 0.9; }
+        if (r < 0.4) { b.state = 'volley'; b.stateT = 1.3; b.volleyN = 3; }
+        else if (r < 0.75) { b.state = 'dashTele'; b.stateT = 0.85; b.telegraphT = 0.85; }
+        else { b.state = 'galickTele'; b.stateT = 1.25; b.telegraphT = 1.25; }
       }
       break;
     }
     case 'volley':
       b.y += (hoverY - b.y) * 3 * dt;
       if (b.volleyN > 0 && b.stateT <= 1.3 - (4 - b.volleyN + 1) * 0.28) {
-        bossShoot(b.x + (b.flipped ? -10 : 10), b.y - 14, p.x, py, 190);
+        bossShoot(b.x + (b.flipped ? -10 : 10), b.y - 14, p.x, py, 150);
         AudioSys.sfx('blast');
         b.volleyN--;
       }
-      if (b.stateT <= 0) { b.state = 'hover'; b.stateT = 1.4 + Math.random() * 0.8; }
+      if (b.stateT <= 0) { b.state = 'hover'; b.stateT = 1.9 + Math.random() * 0.8; }
       break;
     case 'dashTele':
       if (b.stateT <= 0) {
         b.state = 'dash';
-        b.dashVX = Math.sign(p.x - b.x) * 330;
+        b.dashVX = Math.sign(p.x - b.x) * 270;
         b.dashY = py;
         b.stateT = 0.7;
         AudioSys.sfx('kame');
@@ -189,7 +194,7 @@ function updateVegeta(b, p, py, dt) {
       b.y += (b.dashY + 10 - b.y) * 6 * dt;
       if (b.x < b.arenaL + 14 || b.x > b.arenaR - 14 || b.stateT <= 0) {
         b.x = Math.max(b.arenaL + 14, Math.min(b.arenaR - 14, b.x));
-        b.state = 'hover'; b.stateT = 1.5;
+        b.state = 'hover'; b.stateT = 2.0;
       }
       break;
     case 'galickTele':
@@ -211,7 +216,7 @@ function updateVegeta(b, p, py, dt) {
         if (inX && Math.abs((p.y - 10) - beamY) < 16) hurtPlayer();
       }
       if (Math.random() < 0.7) spawnChargeParticle(b.x + dir * (20 + Math.random() * 180), beamY + (Math.random() * 10 - 5));
-      if (b.stateT <= 0) { b.state = 'hover'; b.stateT = 1.8; }
+      if (b.stateT <= 0) { b.state = 'hover'; b.stateT = 2.2; }
       break;
     }
   }
@@ -232,7 +237,7 @@ function updateGinyu(b, p, py, dt) {
       if (b.stateT <= 0) {
         const r = Math.random();
         if (r < 0.45) { b.state = 'spread'; b.stateT = 0.4; }
-        else if (r < 0.8) { b.state = 'chargeTele'; b.stateT = 0.6; b.telegraphT = 0.6; b.chargeY = py; }
+        else if (r < 0.8) { b.state = 'chargeTele'; b.stateT = 0.9; b.telegraphT = 0.9; b.chargeY = py; }
         else { b.state = 'orb'; b.stateT = 0.5; }
       }
       break;
@@ -240,18 +245,18 @@ function updateGinyu(b, p, py, dt) {
       if (b.stateT <= 0) {
         for (const a of [-0.45, -0.15, 0.15, 0.45]) {
           const base = Math.atan2(py - (b.y - 12), p.x - b.x);
-          G.projectiles.push({ kind: 'shot', x: b.x, y: b.y - 12, vx: Math.cos(base + a) * 175, vy: Math.sin(base + a) * 175, r: 3.5, life: 3.5, friendly: false });
+          G.projectiles.push({ kind: 'shot', x: b.x, y: b.y - 12, vx: Math.cos(base + a) * 145, vy: Math.sin(base + a) * 145, r: 3.5, life: 3.5, friendly: false });
         }
         AudioSys.sfx('blast');
-        b.state = 'hover'; b.stateT = 1.6;
+        b.state = 'hover'; b.stateT = 2.1;
       }
       break;
     case 'chargeTele':
-      b.y += (b.chargeY + 12 - b.y) * 5 * dt;
+      b.y += (b.chargeY + 12 - b.y) * 4 * dt;
       if (b.stateT <= 0) { b.state = 'charge'; b.stateT = 1.4; AudioSys.sfx('kame'); }
       break;
     case 'charge':
-      b.x -= 380 * dt;
+      b.x -= 320 * dt;
       if (b.x < G.camX - 40) {
         b.x = G.camX + VW - 60;
         b.state = 'hover'; b.stateT = 1.4;
@@ -270,7 +275,7 @@ function updateGinyu(b, p, py, dt) {
 
 // --- FRIEZA: 2 phases. Teleports, death beams; phase 2 = death ball + speed ---
 function updateFrieza(b, p, py, dt) {
-  const fast = b.phase === 1 ? 1.45 : 1;
+  const fast = b.phase === 1 ? 1.25 : 1;
   const hoverY = b.groundY - 34 + Math.sin(b.t * 2.2) * 10;
   switch (b.state) {
     case 'enter':
@@ -288,23 +293,23 @@ function updateFrieza(b, p, py, dt) {
       b.x += (Math.max(b.arenaL + 20, Math.min(b.arenaR - 20, want)) - b.x) * 1.3 * fast * dt;
       if (b.stateT <= 0) {
         const r = Math.random();
-        if (r < 0.35) { b.state = 'beams'; b.stateT = 1.4 / fast; b.volleyN = b.phase === 1 ? 6 : 4; }
+        if (r < 0.35) { b.state = 'beams'; b.stateT = 1.4 / fast; b.volleyN = b.phase === 1 ? 5 : 3; }
         else if (r < 0.6) { b.state = 'teleport'; b.stateT = 0.3; }
-        else if (r < 0.85 || b.phase === 0) { b.state = 'dashTele'; b.stateT = 0.5 / fast; b.telegraphT = 0.5 / fast; }
+        else if (r < 0.85 || b.phase === 0) { b.state = 'dashTele'; b.stateT = 0.8 / fast; b.telegraphT = 0.8 / fast; }
         else { b.state = 'deathballTele'; b.stateT = 1.0; b.telegraphT = 1.0; }
       }
       break;
     }
     case 'beams': {
       b.y += (hoverY - b.y) * 3 * dt;
-      const interval = (1.4 / fast) / (b.phase === 1 ? 6 : 4);
+      const interval = (1.4 / fast) / (b.phase === 1 ? 5 : 3);
       const fired = Math.floor((1.4 / fast - b.stateT) / interval);
       if (fired > (b.firedN || 0)) {
         b.firedN = fired;
-        bossShoot(b.x + (b.flipped ? -8 : 8), b.y - 16, p.x + (Math.random() - 0.5) * 30, py + (Math.random() - 0.5) * 20, 230, 2.5);
+        bossShoot(b.x + (b.flipped ? -8 : 8), b.y - 16, p.x + (Math.random() - 0.5) * 40, py + (Math.random() - 0.5) * 30, 185, 2.5);
         AudioSys.sfx('blast');
       }
-      if (b.stateT <= 0) { b.firedN = 0; b.state = 'hover'; b.stateT = (1.2 + Math.random() * 0.6) / fast; }
+      if (b.stateT <= 0) { b.firedN = 0; b.state = 'hover'; b.stateT = (1.7 + Math.random() * 0.6) / fast; }
       break;
     }
     case 'teleport':
@@ -321,7 +326,7 @@ function updateFrieza(b, p, py, dt) {
     case 'dashTele':
       if (b.stateT <= 0) {
         b.state = 'dash';
-        b.dashVX = Math.sign(p.x - b.x) * 360 * fast;
+        b.dashVX = Math.sign(p.x - b.x) * 290 * fast;
         b.dashY = py;
         b.stateT = 0.6;
         AudioSys.sfx('kame');
@@ -342,7 +347,7 @@ function updateFrieza(b, p, py, dt) {
         b.state = 'hover'; b.stateT = 2.0;
         AudioSys.sfx('kame');
         G.shake = 0.5;
-        G.projectiles.push({ kind: 'deathball', x: b.x, y: b.y - 24, vx: Math.sign(p.x - b.x) * 90, vy: 30, r: 14, life: 5, friendly: false });
+        G.projectiles.push({ kind: 'deathball', x: b.x, y: b.y - 24, vx: Math.sign(p.x - b.x) * 70, vy: 26, r: 14, life: 5, friendly: false });
       }
       break;
   }
@@ -371,18 +376,18 @@ function drawBoss(ctx, camX, camY) {
   if (b.telegraphT > 0 && (b.state.includes('Tele') || b.state === 'stomp' || b.state === 'shoot')) {
     b.telegraphT -= 1 / 60;
     ctx.fillStyle = 'rgba(255,60,60,0.35)';
-    ctx.beginPath(); ctx.arc(x, y - (b.kind === 'mech' ? 18 : 13), 22 + Math.sin(b.t * 18) * 4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - (b.kind === 'mech' ? 22 : 17), 28 + Math.sin(b.t * 18) * 5, 0, 7); ctx.fill();
   }
   // frieza phase-2 aura
   if (b.kind === 'frieza' && b.phase === 1 && !b.dead) {
     ctx.fillStyle = 'rgba(160,90,216,0.25)';
-    ctx.beginPath(); ctx.ellipse(x, y - 13, 18 + Math.sin(b.t * 10) * 3, 22, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, y - 17, 23 + Math.sin(b.t * 10) * 4, 28, 0, 0, 7); ctx.fill();
   }
-  if (img) drawSprite(ctx, img, x, y, b.flipped, 1.4);
+  if (img) drawSprite(ctx, img, x, y, b.flipped, 1.8);
   // galick gun / vegeta beam
   if (b.kind === 'vegeta' && b.state === 'galick') {
     const dir = b.galickDir;
-    const by = y - 19;
+    const by = y - 24;
     const len = dir > 0 ? VW - x : x;
     ctx.fillStyle = 'rgba(190,80,255,0.85)';
     ctx.fillRect(dir > 0 ? x + 14 : x - 14 - len, by - 7, len, 14);

@@ -99,11 +99,16 @@ function updatePlayer(dt) {
     if (p.ssT <= 0) { p.ss = false; AudioSys.sfx('scatter'); }
   }
   // ki regen
-  p.ki = Math.min(p.kiMax, p.ki + (p.ss ? 14 : 6) * dt);
+  p.ki = Math.min(p.kiMax, p.ki + (p.ss ? 16 : 8) * dt);
   p.anim += dt * (1 + Math.abs(p.vx) / 60);
 
   // SS aura particles
   if (p.ss && Math.random() < 0.5) spawnAura(p.x, p.y - 10);
+  // afterimage trail when super or moving fast
+  if ((p.ss || Math.abs(p.vx) > 240) && Math.floor(p.anim * 24) % 3 === 0) {
+    G.trail.push({ x: p.x, y: p.y, flip: p.facing < 0, t: 0.22, ss: p.ss });
+    if (G.trail.length > 7) G.trail.shift();
+  }
 }
 
 function handleAttacks(dt) {
@@ -124,10 +129,10 @@ function handleAttacks(dt) {
       fireKamehameha();
     } else if (p.chargeT < 0.45) {
       // quick tap: punch if enemy close, else ki blast
-      const near = G.enemies.find(e => !e.dead && Math.abs(e.x - p.x) < 30 && Math.abs((e.y - 8) - (p.y - 10)) < 24 && Math.sign(e.x - p.x) === p.facing);
+      const near = G.enemies.find(e => !e.dead && Math.abs(e.x - p.x) < 38 && Math.abs((e.y - 8) - (p.y - 10)) < 28 && Math.sign(e.x - p.x) === p.facing);
       if (near || G.boss && !G.boss.dead && Math.abs(G.boss.x - p.x) < 40) {
         doPunch();
-      } else if (p.ki >= 10) {
+      } else if (p.ki >= 8) {
         fireKiBlast();
       } else {
         doPunch();
@@ -143,11 +148,11 @@ function doPunch() {
   p.attackKind = 'punch';
   p.attackT = 0.22;
   AudioSys.sfx('stomp');
-  const hx = p.x + p.facing * 16, hy = p.y - 10;
+  const hx = p.x + p.facing * 20, hy = p.y - 12;
   let hitSomething = false;
   for (const e of G.enemies) {
     if (e.dead) continue;
-    if (Math.abs(e.x - hx) < 18 && Math.abs((e.y - e.h / 2) - hy) < 18) {
+    if (Math.abs(e.x - hx) < 24 && Math.abs((e.y - e.h / 2) - hy) < 22) {
       damageEnemy(e, p.ss ? 4 : 2);
       hitSomething = true;
     }
@@ -161,7 +166,7 @@ function doPunch() {
 
 function fireKiBlast() {
   const p = G.player;
-  p.ki -= 10;
+  p.ki -= 8;
   p.attackKind = 'blast';
   p.attackT = 0.2;
   AudioSys.sfx('blast');
@@ -336,14 +341,14 @@ function hurtPlayer() {
   const p = G.player;
   if (p.invulnT > 0 || p.deadT > 0) return;
   if (G.zeni > 0) {
-    scatterZeni(Math.min(G.zeni, 20));
-    G.zeni -= Math.min(G.zeni, 20);
-    p.hurtT = 0.4; p.invulnT = 1.6;
+    scatterZeni(Math.min(G.zeni, 12));
+    G.zeni -= Math.min(G.zeni, 12);
+    p.hurtT = 0.4; p.invulnT = 2.2;
     p.vy = -200; p.vx = -p.facing * 130;
     p.charging = false; p.chargeT = 0;
     AudioSys.sfx('hurt');
   } else if (p.ss) {
-    p.hurtT = 0.4; p.invulnT = 1.6;
+    p.hurtT = 0.4; p.invulnT = 2.2;
     p.vy = -200;
     AudioSys.sfx('hurt');
   } else {
@@ -367,7 +372,7 @@ function respawnPlayer() {
   p.invulnT = 2; p.hurtT = 0; p.deadT = 0;
   p.ki = 50;
   G.kame = null;
-  G.zeni = Math.max(G.zeni, 10); // mercy zeni so you're never at zero
+  G.zeni = Math.max(G.zeni, 30); // mercy zeni so you're never at zero
   if (G.state === 'boss' && G.boss) {
     // retry boss with arena reset
     G.boss.hp = G.boss.hpMax;
@@ -385,7 +390,7 @@ function scatterZeni(n) {
       type: 'zeni', x: p.x, y: p.y - 10,
       vx: Math.cos(a) * (60 + Math.random() * 90),
       vy: -120 - Math.random() * 140,
-      scattered: true, life: 5, graceT: 0.6,
+      scattered: true, life: 8, graceT: 0.5,
     });
   }
 }
@@ -425,8 +430,8 @@ function makeEnemy(kind, x, y, opts = {}) {
     case 'drone': return Object.assign(base, { hp: 1, w: 12, h: 8, frieza: !!opts.frieza });
     case 'saiba': return Object.assign(base, { hp: 2, w: 12, h: 16, hopT: 1 + Math.random() });
     case 'soldier': return Object.assign(base, { hp: 2, w: 14, h: 18, shootT: 1.2, fly: true });
-    case 'soldier_g': return Object.assign(base, { hp: 3, w: 14, h: 18, shootT: 1.8, dir: -1 });
-    case 'asteroid': return Object.assign(base, { hp: 3, w: 20, h: 20, rot: 0, r: 10 + Math.random() * 6 });
+    case 'soldier_g': return Object.assign(base, { hp: 2, w: 14, h: 18, shootT: 1.8, dir: -1 });
+    case 'asteroid': return Object.assign(base, { hp: 2, w: 20, h: 20, rot: 0, r: 10 + Math.random() * 6 });
   }
   return base;
 }
@@ -619,7 +624,7 @@ function updatePickups(dt) {
     }
     if (pk.graceT > 0 || pk.dead) continue;
     const dx = pk.x - p.x, dy = pk.y - (p.flyMode ? p.fy : p.y - 10);
-    if (Math.abs(dx) < 14 && Math.abs(dy) < 16) {
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 22) {
       pk.dead = true;
       if (pk.type === 'zeni') {
         G.zeni++; G.score += 10;
@@ -673,6 +678,7 @@ function spawnDust(x, y, n) {
   }
 }
 function spawnExplosion(x, y) {
+  G.particles.push({ x, y, vx: 0, vy: 0, life: 0.35, maxLife: 0.35, color: '#ffffff', size: 26, ring: true });
   for (let i = 0; i < 14; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = 40 + Math.random() * 130;
@@ -700,6 +706,8 @@ function updateParticles(dt) {
     pt.life -= dt;
   }
   G.particles = G.particles.filter(pt => pt.life > 0);
+  for (const tr of G.trail) tr.t -= dt;
+  G.trail = G.trail.filter(tr => tr.t > 0);
 }
 
 // ---------------- TRANSFORM ----------------
